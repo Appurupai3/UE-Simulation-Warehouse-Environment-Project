@@ -228,12 +228,11 @@ async def clear_orders():
     await broadcast_to_all({"type": "orders_cleared", "timestamp": datetime.now(timezone.utc).isoformat()})
     return {"status": "cleared"}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def _handle_websocket(websocket: WebSocket, client_type: Optional[str] = None, client_identifier: Optional[str] = None):
     await websocket.accept()
     connected_clients.add(websocket)
-    client_id = id(websocket)
-    logger.info(f"WS connected: {client_id}, total={len(connected_clients)}")
+    client_id = client_identifier or id(websocket)
+    logger.info(f"WS connected: {client_id} ({client_type or 'generic'}), total={len(connected_clients)}")
     try:
         while True:
             raw = await websocket.receive_text()
@@ -296,17 +295,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 await broadcast_to_all({"type": "order_deleted", "order_id": order_id, "timestamp": datetime.now(timezone.utc).isoformat()})
 
             elif msg_type == "clear_orders":
+                global order_counter
                 orders_db.clear()
                 order_counter = 1
                 save_data()
                 await broadcast_to_all({"type": "orders_cleared", "timestamp": datetime.now(timezone.utc).isoformat()})
 
             else:
+                error_payload = {"type": "error", "message": f"Unknown message type: {msg_type}"}
+                await websocket.send_text(json.dumps(error_payload))
                 logger.warning(f"Unknown WS message type: {msg_type}")
     except WebSocketDisconnect:
         logger.info(f"WS disconnected: {client_id}")
     finally:
         connected_clients.discard(websocket)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await _handle_websocket(websocket)
+
+
+@app.websocket("/ws/{client_type}/{client_id}")
+async def websocket_with_params(websocket: WebSocket, client_type: str, client_id: str):
+    await _handle_websocket(websocket, client_type=client_type, client_identifier=client_id)
 
 # 相容舊用法：允許 ws 根路徑連線（ws://host:port）
 @app.websocket("/")

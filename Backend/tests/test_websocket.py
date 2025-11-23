@@ -15,19 +15,25 @@ async def test_websocket_connection():
         async with websockets.connect(uri) as websocket:
             print("Connected to WebSocket server")
 
-            # Send a test message
-            test_message = {
-                "type": "test",
-                "data": {"message": "Hello from test client"},
+            # Send an order and wait for confirmation
+            order_message = {
+                "type": "custom_message",
+                "content": "10-20-30",
                 "timestamp": datetime.utcnow().isoformat()
             }
+            await websocket.send(json.dumps(order_message))
+            print(f"Sent order message: {order_message}")
 
-            await websocket.send(json.dumps(test_message))
-            print(f"Sent: {test_message}")
+            confirmation = await asyncio.wait_for(websocket.recv(), timeout=5)
+            print(f"Received confirmation: {confirmation}")
 
-            # Wait for response
-            response = await websocket.recv()
-            print(f"Received: {response}")
+            # Request the latest orders list
+            await websocket.send(json.dumps({
+                "type": "get_orders",
+                "timestamp": datetime.utcnow().isoformat()
+            }))
+            orders_response = await asyncio.wait_for(websocket.recv(), timeout=5)
+            print(f"Orders response: {orders_response}")
 
     except Exception as e:
         print(f"Connection failed: {e}")

@@ -22,7 +22,8 @@ Simulation-Warehouse-Environment-Project/
 │   ├── package.json       # Node.js 依賴項
 │   ├── vite.config.js     # Vite 設定
 │   └── .gitignore         # Git 忽略規則
-└── start_demo.sh          # 啟動腳本
+├── start_demo.sh          # 啟動腳本 (適用 bash/WSL)
+└── start_demo.ps1         # 啟動腳本 (適用 PowerShell)
 ```
 
 ## 🚀 快速開始
@@ -31,11 +32,18 @@ Simulation-Warehouse-Environment-Project/
 
 確保安裝了以下工具：
 - **Linux bun**: `curl -fsSL https://bun.sh/install | bash`
-- **Windows bun**: `powershell -c "irm bun.sh/install.ps1|iex"` 
+- **Windows bun**: `powershell -c "irm bun.sh/install.ps1|iex"`
 - **Python 3.8+**
 - **Node.js 18+** (bun 會自動處理)
 
-### 2. 訪問應用程式
+### 2. 一鍵啟動腳本
+
+- **macOS / Linux / WSL**：在 bash 執行 `./start_demo.sh`
+- **Windows PowerShell**：在 PowerShell 執行 `./start_demo.ps1`
+
+> 如果在 PowerShell 直接執行 `start_demo.sh`，會因為指令語法不同而出現錯誤，請改用對應環境的腳本。
+
+### 3. 訪問應用程式
 
 - **前端介面**: http://localhost:5173
 - **WebSocket 端點**: ws://localhost:8000/ws/{client_type}/{client_id}
