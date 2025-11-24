@@ -107,7 +107,7 @@ onMounted(() => {
     // 創建渲染器
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.value.clientWidth, container.value.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -130,10 +130,10 @@ onMounted(() => {
     scene.add(hemiLight);
 
     // 添加定向光
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.85);
     directionalLight.position.set(12, 18, 10);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.set(2048, 2048);
+    directionalLight.shadow.mapSize.set(1024, 1024);
     directionalLight.shadow.camera.near = 2;
     directionalLight.shadow.camera.far = 80;
     directionalLight.shadow.camera.left = -50;
@@ -193,7 +193,7 @@ onMounted(() => {
 
                     // 創建新的 Mesh，沒有任何變換
                     const newMesh = new THREE.Mesh(geometry, material);
-                    newMesh.castShadow = true;
+                    newMesh.castShadow = false;
                     newMesh.receiveShadow = true;
                     resetTransform(newMesh);
 
@@ -566,11 +566,18 @@ onMounted(() => {
         ];
 
         ringPositions.forEach((pos) => {
-            const spot = new THREE.SpotLight(ringColor, 0.6, 120, Math.PI / 4, 0.4, 1);
+            const spot = new THREE.SpotLight(
+                ringColor,
+                0.55,
+                120,
+                Math.PI / 4,
+                0.4,
+                1,
+            );
             spot.position.copy(pos);
             spot.target.position.set(0, gridMetrics.bottomY + gridMetrics.boxHeight, 0);
-            spot.castShadow = true;
-            spot.penumbra = 0.45;
+            spot.castShadow = false;
+            spot.penumbra = 0.4;
             scene.add(spot);
             scene.add(spot.target);
         });
@@ -586,7 +593,7 @@ onMounted(() => {
                     gridMetrics.startZ + (z + 0.5) * stepZ - gridMetrics.modelCenter.z;
                 const light = new THREE.PointLight(warmColor, 0.6, 40, 1.8);
                 light.position.set(xPos, baseHeight * 0.7, zPos - stepZ * (bay.protrudeSteps || 0));
-                light.castShadow = true;
+                light.castShadow = false;
                 scene.add(light);
             });
         });
