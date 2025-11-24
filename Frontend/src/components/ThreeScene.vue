@@ -17,6 +17,16 @@
                 <span class="speed-value">{{ moveSpeed.toFixed(1) }}</span>
             </label>
         </div>
+        <div
+            v-if="hoveredBoxInfo"
+            class="box-tooltip"
+            :style="{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }"
+        >
+            <div class="tooltip-label">箱子編號</div>
+            <div class="tooltip-id">#{{ hoveredBoxInfo.boxId }}</div>
+            <div class="tooltip-label">商品名稱</div>
+            <div class="tooltip-name">{{ hoveredBoxInfo.productName }}</div>
+        </div>
     </div>
 </template>
 
@@ -58,6 +68,11 @@ let handleKeyUp = null;
 let handlePointerDown = null;
 let handlePointerMove = null;
 let handlePointerUp = null;
+let handleMouseLeave = null;
+const hoveredBoxInfo = ref(null);
+const tooltipPosition = ref({ x: 0, y: 0 });
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
 // 使用 cargo 數據管理
 const {
@@ -77,7 +92,8 @@ onMounted(() => {
 
     // 創建場景
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+    scene.background = new THREE.Color(0x0b1224);
+    scene.fog = new THREE.Fog(0x0b1224, 35, 160);
 
     // 創建相機
     camera = new THREE.PerspectiveCamera(
@@ -92,6 +108,9 @@ onMounted(() => {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.value.clientWidth, container.value.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // 確保 canvas 可以正確接收滑鼠事件
     renderer.domElement.style.display = "block";
@@ -102,12 +121,25 @@ onMounted(() => {
     container.value.appendChild(renderer.domElement);
 
     // 添加環境光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xf2f5ff, 0.55);
     scene.add(ambientLight);
 
+    // 添加柔和天空光
+    const hemiLight = new THREE.HemisphereLight(0x67e8f9, 0x0f172a, 0.6);
+    hemiLight.position.set(0, 25, 0);
+    scene.add(hemiLight);
+
     // 添加定向光
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 5, 5);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    directionalLight.position.set(12, 18, 10);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.set(2048, 2048);
+    directionalLight.shadow.camera.near = 2;
+    directionalLight.shadow.camera.far = 80;
+    directionalLight.shadow.camera.left = -50;
+    directionalLight.shadow.camera.right = 50;
+    directionalLight.shadow.camera.top = 50;
+    directionalLight.shadow.camera.bottom = -50;
     scene.add(directionalLight);
 
     // 重置對象所有變換的輔助函數
@@ -161,6 +193,8 @@ onMounted(() => {
 
                     // 創建新的 Mesh，沒有任何變換
                     const newMesh = new THREE.Mesh(geometry, material);
+                    newMesh.castShadow = true;
+                    newMesh.receiveShadow = true;
                     resetTransform(newMesh);
 
                     meshes.push(newMesh);
@@ -234,6 +268,10 @@ onMounted(() => {
 
             // 建立卸貨區並鋪設軌道
             createUnloadAreas(gridMetrics);
+
+            // 鋪設地板與氛圍燈光
+            createWarehouseGround(gridMetrics);
+            createWarehouseLights(gridMetrics);
 
             // 建立可控制的玩家模型
             createPlayer(modelSize);
@@ -316,6 +354,11 @@ onMounted(() => {
                         targetCenterY - modelCenter.y,
                         targetCenterZ - modelCenter.z,
                     );
+                    const boxId = boxes.length + 1;
+                    clonedModel.userData = {
+                        boxId,
+                        productName: `商品 ${boxId}`,
+                    };
                     clonedModel.updateMatrixWorld(true);
                     scene.add(clonedModel);
                     boxes.push(clonedModel);
@@ -459,6 +502,96 @@ onMounted(() => {
         cameraOffset.set(0, Math.max(1.8, cameraZ * 0.2), cameraZ * 0.6);
     }
 
+    function createWarehouseGround(gridMetrics) {
+        const pad = Math.max(gridMetrics.boxWidth, gridMetrics.boxDepth) * 6;
+        const groundSize = Math.max(gridMetrics.totalWidth, gridMetrics.totalDepth) + pad;
+        const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize);
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.92,
+            metalness: 0.08,
+            envMapIntensity: 0.35,
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = gridMetrics.bottomY - gridMetrics.boxHeight * 0.55;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(
+            groundSize,
+            Math.max(20, Math.floor(groundSize / (gridMetrics.boxWidth * 0.8))),
+            0x334155,
+            0x1e293b,
+        );
+        grid.material.opacity = 0.35;
+        grid.material.transparent = true;
+        grid.position.y = ground.position.y + 0.01;
+        scene.add(grid);
+
+        const accentWidth = gridMetrics.totalWidth * 0.4;
+        const accentDepth = gridMetrics.boxDepth * 2.5;
+        const accentGeometry = new THREE.PlaneGeometry(accentWidth, accentDepth);
+        const accentMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0ea5e9,
+            emissive: 0x0ea5e9,
+            emissiveIntensity: 0.12,
+            transparent: true,
+            opacity: 0.35,
+        });
+        const accent = new THREE.Mesh(accentGeometry, accentMaterial);
+        accent.rotation.x = -Math.PI / 2;
+        accent.position.set(
+            0,
+            ground.position.y + 0.02,
+            gridMetrics.startZ - gridMetrics.modelCenter.z - accentDepth * 0.3,
+        );
+        accent.receiveShadow = true;
+        scene.add(accent);
+    }
+
+    function createWarehouseLights(gridMetrics) {
+        const baseHeight = gridMetrics.pillarTopY + gridMetrics.boxHeight * 1.2;
+        const radiusX = gridMetrics.totalWidth * 0.65;
+        const radiusZ = gridMetrics.totalDepth * 0.65;
+
+        const ringColor = 0x38bdf8;
+        const warmColor = 0xfbbf24;
+
+        const ringPositions = [
+            new THREE.Vector3(-radiusX, baseHeight, -radiusZ),
+            new THREE.Vector3(radiusX, baseHeight, -radiusZ),
+            new THREE.Vector3(-radiusX, baseHeight, radiusZ),
+            new THREE.Vector3(radiusX, baseHeight, radiusZ),
+        ];
+
+        ringPositions.forEach((pos) => {
+            const spot = new THREE.SpotLight(ringColor, 0.6, 120, Math.PI / 4, 0.4, 1);
+            spot.position.copy(pos);
+            spot.target.position.set(0, gridMetrics.bottomY + gridMetrics.boxHeight, 0);
+            spot.castShadow = true;
+            spot.penumbra = 0.45;
+            scene.add(spot);
+            scene.add(spot.target);
+        });
+
+        unloadBays.forEach((bay) => {
+            bay.cells.forEach((cellKey) => {
+                const [x, z] = cellKey.split("-").map(Number);
+                const stepX = gridMetrics.boxWidth + gridMetrics.spacingX;
+                const stepZ = gridMetrics.boxDepth + gridMetrics.spacingZ;
+                const xPos =
+                    gridMetrics.startX + (x + 0.5) * stepX - gridMetrics.modelCenter.x;
+                const zPos =
+                    gridMetrics.startZ + (z + 0.5) * stepZ - gridMetrics.modelCenter.z;
+                const light = new THREE.PointLight(warmColor, 0.6, 40, 1.8);
+                light.position.set(xPos, baseHeight * 0.7, zPos - stepZ * (bay.protrudeSteps || 0));
+                light.castShadow = true;
+                scene.add(light);
+            });
+        });
+    }
+
     function createTrackSegment({
         sizeX,
         sizeZ,
@@ -480,6 +613,8 @@ onMounted(() => {
                     emissive: 0x2a2a2a,
                     emissiveIntensity: 0.2,
                 });
+                child.castShadow = true;
+                child.receiveShadow = true;
             }
         });
 
@@ -490,6 +625,12 @@ onMounted(() => {
             sizeZ / gridMetrics.boxDepth,
         );
         segment.position.copy(position);
+        segment.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
         trackPieces.push(segment);
         (parent || scene).add(segment);
     }
@@ -730,6 +871,59 @@ onMounted(() => {
         camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1, 0)));
     }
 
+    function findParentBox(object) {
+        let current = object;
+
+        while (current) {
+            if (boxes.includes(current)) {
+                return current;
+            }
+            current = current.parent;
+        }
+
+        return null;
+    }
+
+    function updateHoverInfo(event) {
+        if (!renderer || !camera || !container.value) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (
+            event.clientX < rect.left ||
+            event.clientX > rect.right ||
+            event.clientY < rect.top ||
+            event.clientY > rect.bottom
+        ) {
+            hoveredBoxInfo.value = null;
+            return;
+        }
+
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(boxes, true);
+
+        if (intersects.length > 0) {
+            const box = findParentBox(intersects[0].object);
+
+            if (box && box.userData?.boxId) {
+                const containerRect = container.value.getBoundingClientRect();
+                hoveredBoxInfo.value = {
+                    boxId: box.userData.boxId,
+                    productName: box.userData.productName,
+                };
+                tooltipPosition.value = {
+                    x: event.clientX - containerRect.left,
+                    y: event.clientY - containerRect.top,
+                };
+                return;
+            }
+        }
+
+        hoveredBoxInfo.value = null;
+    }
+
     function registerInputs() {
         handleKeyDown = (event) => {
             const handledKeys = [
@@ -762,6 +956,7 @@ onMounted(() => {
         };
 
         handlePointerMove = (event) => {
+            updateHoverInfo(event);
             if (!isDragging) return;
             const deltaX = event.clientX - previousPointer.x;
             const deltaY = event.clientY - previousPointer.y;
@@ -778,11 +973,16 @@ onMounted(() => {
             isDragging = false;
         };
 
+        handleMouseLeave = () => {
+            hoveredBoxInfo.value = null;
+        };
+
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
         renderer.domElement.addEventListener("mousedown", handlePointerDown);
         window.addEventListener("mousemove", handlePointerMove);
         window.addEventListener("mouseup", handlePointerUp);
+        renderer.domElement.addEventListener("mouseleave", handleMouseLeave);
     }
 
     registerInputs();
@@ -836,6 +1036,8 @@ onUnmounted(() => {
         renderer?.domElement?.removeEventListener("mousedown", handlePointerDown);
     if (handlePointerMove) window.removeEventListener("mousemove", handlePointerMove);
     if (handlePointerUp) window.removeEventListener("mouseup", handlePointerUp);
+    if (handleMouseLeave)
+        renderer?.domElement?.removeEventListener("mouseleave", handleMouseLeave);
 
     // 清理方塊資源（GLTF 模型）
     boxes.forEach((box) => {
@@ -910,7 +1112,8 @@ onUnmounted(() => {
     overflow: hidden;
     cursor: grab;
     touch-action: none; /* 禁用默認觸摸行為 */
-    background: #222222;
+    background: radial-gradient(circle at 20% 20%, #1e293b, #0b1224 55%);
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
 }
 
 .three-container:active {
@@ -962,5 +1165,39 @@ onUnmounted(() => {
     min-width: 40px;
     display: inline-block;
     text-align: right;
+}
+
+.box-tooltip {
+    position: absolute;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 8px;
+    font-size: 12px;
+    pointer-events: none;
+    transform: translate(12px, -12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    z-index: 12;
+    backdrop-filter: blur(6px);
+    min-width: 160px;
+}
+
+.tooltip-label {
+    font-size: 11px;
+    color: #cbd5e1;
+    letter-spacing: 0.5px;
+}
+
+.tooltip-id {
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 6px;
+    color: #a5b4fc;
+}
+
+.tooltip-name {
+    font-weight: 600;
+    color: #f9fafb;
 }
 </style>
