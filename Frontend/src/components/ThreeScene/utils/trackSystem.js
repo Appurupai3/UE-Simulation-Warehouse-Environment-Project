@@ -50,7 +50,7 @@ export function createTrackSystem({ scene, baseModel, trackPieces, gridMetrics, 
     const railWidth = laneWidth * 0.15;
     const trackGauge = laneWidth * 0.6;
     const trackThickness = gridMetrics.boxHeight * 0.08;
-    const trackY = gridMetrics.pillarTopY + trackThickness * 0.5;
+    const trackY = gridMetrics.boxTopY + trackThickness * 0.5;
 
     const stepX = gridMetrics.boxWidth + gridMetrics.spacingX;
     const stepZ = gridMetrics.boxDepth + gridMetrics.spacingZ;

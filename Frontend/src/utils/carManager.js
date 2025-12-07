@@ -27,9 +27,10 @@ export class CarManager {
         );
         this.trackGauge = laneWidth * 0.6;
 
-        // 和軌道系統保持一致的高度與厚度
+        // 以箱子頂部為基準的軌道高度（車子需對齊箱子而非架子）
         const trackThickness = gridMetrics.boxHeight * 0.08;
-        const trackY = gridMetrics.pillarTopY + trackThickness * 0.5;
+        const trackCenterY = gridMetrics.boxTopY + trackThickness * 0.5;
+        const trackSurfaceY = trackCenterY + trackThickness * 0.5;
 
         // 只創建兩台車：一台橫向，一台縱向
         const carConfigs = [
@@ -73,7 +74,7 @@ export class CarManager {
                     // 生成路徑（車子在軌道上移動）
                     const path = this.generateCarPath(
                         gridMetrics,
-                        trackY,
+                        trackSurfaceY,
                         config.pathType
                     );
                     const startIndex = Math.floor(path.length * config.startOffset);
@@ -99,7 +100,7 @@ export class CarManager {
                 console.log(`✓ 總共加載了 ${this.cars.length} 台車`);
                 console.log("  - 軌距:", this.trackGauge.toFixed(3));
                 console.log("  - 車子縮放:", carScale.toFixed(3));
-                console.log("  - 軌道高度:", trackY.toFixed(3));
+                console.log("  - 軌道頂面高度:", trackSurfaceY.toFixed(3));
             },
             (progress) => {
                 console.log(

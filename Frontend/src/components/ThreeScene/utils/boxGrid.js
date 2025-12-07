@@ -27,9 +27,10 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
     const baseOffsetY = -finalBox.min.y;
 
     const topLayerCenterY = startY + (height - 1) * (boxHeight + spacingY);
-    const topY = topLayerCenterY + boxHeight / 2;
-    const bottomY = startY - boxHeight / 2;
-    const pillarTopY = topY;
+    const topY = topLayerCenterY - modelCenter.y + boxHeight / 2;
+    const pillarTopY = topY + boxHeight;
+    const bottomY = startY - modelCenter.y - boxHeight / 2;
+    const boxTopY = topLayerCenterY + baseOffsetY + boxHeight / 2;
 
     const shelfMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
@@ -106,7 +107,8 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
         startX, startY, startZ,
         topY, pillarTopY, bottomY,
         modelCenter, modelSize,
-        baseOffsetY
+        baseOffsetY,
+        boxTopY
     };
 
     if (onComplete) onComplete(gridMetrics);
