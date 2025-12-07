@@ -23,10 +23,13 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
     const startZ = -totalDepth / 2 + boxDepth / 2;
     const startY = -totalHeight / 2 + boxHeight / 2;
 
+    // 使箱子底部與層板齊平，避免漂浮或陷入架子
+    const baseOffsetY = -finalBox.min.y;
+
     const topLayerCenterY = startY + (height - 1) * (boxHeight + spacingY);
-    const topY = topLayerCenterY - modelCenter.y + boxHeight / 2;
-    const pillarTopY = topY + boxHeight;
-    const bottomY = startY - modelCenter.y - boxHeight / 2;
+    const topY = topLayerCenterY + boxHeight / 2;
+    const bottomY = startY - boxHeight / 2;
+    const pillarTopY = topY;
 
     const shelfMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
@@ -46,11 +49,12 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
                 const targetCenterX = startX + x * (boxWidth + spacingX);
                 const targetCenterZ = startZ + z * (boxDepth + spacingZ);
                 const targetCenterY = startY + y * (boxHeight + spacingY);
+                const targetBaseY = targetCenterY - boxHeight / 2;
 
                 const clonedModel = baseModel.clone(true);
                 clonedModel.position.set(
                     targetCenterX - modelCenter.x,
-                    targetCenterY - modelCenter.y,
+                    targetBaseY + baseOffsetY,
                     targetCenterZ - modelCenter.z
                 );
                 
@@ -101,7 +105,8 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
         totalWidth, totalDepth, totalHeight,
         startX, startY, startZ,
         topY, pillarTopY, bottomY,
-        modelCenter, modelSize
+        modelCenter, modelSize,
+        baseOffsetY
     };
 
     if (onComplete) onComplete(gridMetrics);
