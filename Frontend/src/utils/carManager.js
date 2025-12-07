@@ -27,6 +27,10 @@ export class CarManager {
         );
         this.trackGauge = laneWidth * 0.6;
 
+        // 和軌道系統保持一致的高度與厚度
+        const trackThickness = gridMetrics.boxHeight * 0.08;
+        const trackY = gridMetrics.pillarTopY + trackThickness * 0.5;
+
         // 只創建兩台車：一台橫向，一台縱向
         const carConfigs = [
             {
@@ -46,16 +50,19 @@ export class CarManager {
         loader.load(
             "/car.glb",
             (gltf) => {
-                // 車子應該在軌道高度（抬高一點）
-                const trackY = gridMetrics.pillarTopY + gridMetrics.boxHeight * 0.7;
-
                 // 車子大小：兩格（兩個箱子的寬度加上間距）
                 const stepX = gridMetrics.boxWidth + gridMetrics.spacingX;
                 const carScale = stepX * 1.1;
 
+                // 以原始模型為模板，確保底部貼合軌道高度
+                const carTemplate = gltf.scene;
+
                 carConfigs.forEach((config) => {
-                    const carClone = gltf.scene.clone();
+                    const carClone = carTemplate.clone(true);
                     carClone.scale.set(carScale, carScale, carScale);
+                    carClone.updateMatrixWorld(true);
+
+                    const baseOffset = this.getCarBaseOffset(carClone);
 
                     // 設置固定旋轉
                     carClone.rotation.y = config.rotation;
@@ -72,7 +79,7 @@ export class CarManager {
                     const startIndex = Math.floor(path.length * config.startOffset);
 
                     // 設置初始位置
-                    carClone.position.copy(path[startIndex]);
+                    carClone.position.copy(path[startIndex]).add(new THREE.Vector3(0, baseOffset, 0));
 
                     this.scene.add(carClone);
 
@@ -82,7 +89,8 @@ export class CarManager {
                         path: path,
                         pathIndex: startIndex,
                         name: config.name,
-                        fixedRotation: config.rotation
+                        fixedRotation: config.rotation,
+                        baseOffset
                     });
 
                     console.log(`✓ ${config.name} 已加載，旋轉: ${(config.rotation * 180 / Math.PI).toFixed(0)}°`);
@@ -220,6 +228,7 @@ export class CarManager {
 
         this.cars.forEach(carData => {
             const { model, path, fixedRotation } = carData;
+            const baseOffset = carData.baseOffset || 0;
 
             // 計算移動距離
             const moveDistance = this.carSpeed * delta;
@@ -228,14 +237,19 @@ export class CarManager {
             while (remainingDistance > 0 && path.length > 0) {
                 const currentPos = model.position;
                 const targetPos = path[carData.pathIndex];
+                const targetPosWithOffset = new THREE.Vector3(
+                    targetPos.x,
+                    targetPos.y + baseOffset,
+                    targetPos.z,
+                );
 
                 const direction = new THREE.Vector3()
-                    .subVectors(targetPos, currentPos);
+                    .subVectors(targetPosWithOffset, currentPos);
                 const distanceToTarget = direction.length();
 
                 if (distanceToTarget <= remainingDistance) {
                     // 到達當前目標點，移動到下一個
-                    model.position.copy(targetPos);
+                    model.position.copy(targetPosWithOffset);
                     remainingDistance -= distanceToTarget;
                     carData.pathIndex = (carData.pathIndex + 1) % path.length;
                 } else {
@@ -289,5 +303,15 @@ export class CarManager {
      */
     getTrackGauge() {
         return this.trackGauge;
+    }
+
+    /**
+     * 取得模型底部到原點的偏移量，讓車子底部貼在軌道高度上
+     * @param {THREE.Object3D} carObject
+     * @returns {number}
+     */
+    getCarBaseOffset(carObject) {
+        const boundingBox = new THREE.Box3().setFromObject(carObject);
+        return -boundingBox.min.y;
     }
 }
