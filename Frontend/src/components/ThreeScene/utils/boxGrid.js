@@ -29,9 +29,9 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
     const bottomY = startY - modelCenter.y - boxHeight / 2;
 
     const shelfMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        metalness: 0.3,
-        roughness: 0.7,
+        color: 0x9ca3af,
+        metalness: 0.4,
+        roughness: 0.6,
     });
 
     const pillarRadius = Math.min(boxWidth, boxDepth) * 0.02;

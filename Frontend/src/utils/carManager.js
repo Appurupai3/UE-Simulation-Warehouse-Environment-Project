@@ -73,6 +73,8 @@ export class CarManager {
                     this.rotateModules(carClone);
                     carClone.scale.set(carScale, carScale, carScale);
 
+                    this.applyCarMaterials(carClone);
+
                     // 設置固定旋轉：所有車輛面向卸貨區
                     carClone.rotation.y = this.unloadFacingRotation;
 
@@ -553,6 +555,62 @@ export class CarManager {
      */
     getTrackGauge() {
         return this.trackGauge;
+    }
+
+    applyCarMaterials(carModel) {
+        const bodyMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2563eb,
+            metalness: 0.45,
+            roughness: 0.35,
+        });
+
+        const accentMaterial = new THREE.MeshStandardMaterial({
+            color: 0xf59e0b,
+            metalness: 0.35,
+            roughness: 0.4,
+        });
+
+        const wheelMaterial = new THREE.MeshStandardMaterial({
+            color: 0x111827,
+            metalness: 0.2,
+            roughness: 0.85,
+        });
+
+        carModel.traverse((child) => {
+            if (!child.isMesh) return;
+
+            const materialList = Array.isArray(child.material)
+                ? child.material
+                : child.material
+                    ? [child.material]
+                    : [];
+
+            const name = (child.name || "").toLowerCase();
+            const hasTransparentSurface = materialList.some(
+                (material) => material?.transparent || material?.opacity < 1,
+            );
+            const targetMaterial = name.includes("wheel")
+                ? wheelMaterial
+                : hasTransparentSurface
+                    ? accentMaterial
+                    : bodyMaterial;
+
+            const appliedMaterial = targetMaterial.clone();
+
+            if (hasTransparentSurface) {
+                appliedMaterial.transparent = true;
+                appliedMaterial.opacity = 0.7;
+            }
+
+            if (Array.isArray(child.material)) {
+                child.material = child.material.map(() => appliedMaterial.clone());
+            } else {
+                child.material = appliedMaterial;
+            }
+
+            child.castShadow = true;
+            child.receiveShadow = true;
+        });
     }
 
     rotateModules(carModel) {
