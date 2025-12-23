@@ -558,22 +558,22 @@ export class CarManager {
     }
 
     applyCarMaterials(carModel) {
+        const roofMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0b0b0f, // black for roof/top
+            metalness: 0.35,
+            roughness: 0.6,
+        });
+
         const bodyMaterial = new THREE.MeshStandardMaterial({
-            color: 0x2563eb,
+            color: 0xef4444, // red body
             metalness: 0.45,
             roughness: 0.35,
         });
 
-        const accentMaterial = new THREE.MeshStandardMaterial({
-            color: 0xf59e0b,
-            metalness: 0.35,
-            roughness: 0.4,
-        });
-
         const wheelMaterial = new THREE.MeshStandardMaterial({
-            color: 0x111827,
-            metalness: 0.2,
-            roughness: 0.85,
+            color: 0x6b7280, // gray wheels
+            metalness: 0.25,
+            roughness: 0.8,
         });
 
         carModel.traverse((child) => {
@@ -591,15 +591,16 @@ export class CarManager {
             );
             const targetMaterial = name.includes("wheel")
                 ? wheelMaterial
-                : hasTransparentSurface
-                    ? accentMaterial
+                : name.includes("roof") || name.includes("top")
+                    ? roofMaterial
                     : bodyMaterial;
 
             const appliedMaterial = targetMaterial.clone();
 
             if (hasTransparentSurface) {
                 appliedMaterial.transparent = true;
-                appliedMaterial.opacity = 0.7;
+                appliedMaterial.opacity = 0.4;
+                appliedMaterial.color = roofMaterial.color.clone();
             }
 
             if (Array.isArray(child.material)) {
