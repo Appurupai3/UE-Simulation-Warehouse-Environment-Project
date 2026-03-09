@@ -304,6 +304,14 @@ export class CarManager {
         return this.isCarReadyForAction(car);
     }
 
+    getCarMotionState(carData) {
+        if (!carData) return "stopped";
+        if (carData.isWaiting) return "stagnant";
+        if (carData.path.length > 0) return "moving";
+        return "stopped";
+    }
+
+
     hasCargo(carId) {
         const car = this.getCarById(carId);
         return Boolean(car?.cargo);
@@ -837,12 +845,8 @@ export class CarManager {
 
     isCarReadyForAction(carData) {
         if (!carData) return false;
-        if (carData.path.length === 0) return true;
-        if (carData.pathIndex === carData.path.length - 1) {
-            const target = carData.path[carData.path.length - 1];
-            return carData.model.position.distanceTo(target.position) < 0.05;
-        }
-        return false;
+        const motionState = this.getCarMotionState(carData);
+        return motionState === "stagnant" || motionState === "stopped";
     }
 
     getShelfBoxesAtCoord(coord) {
@@ -912,7 +916,7 @@ export class CarManager {
         if (!this.gridMetrics) return { success: false, message: "網格資訊未初始化" };
 
         if (!this.isCarReadyForAction(car)) {
-            return { success: false, message: "請先讓車輛抵達目標位置" };
+            return { success: false, message: "僅能在停滯或停止狀態拿取貨物" };
         }
 
         if (car.cargo) {
@@ -947,7 +951,7 @@ export class CarManager {
         }
 
         if (!this.isCarReadyForAction(car)) {
-            return { success: false, message: "請先讓車輛抵達目標位置" };
+            return { success: false, message: "僅能在停滯或停止狀態放置貨物" };
         }
 
         const nextLevel = this.getNextShelfLevel(car.currentCoord);
@@ -1315,11 +1319,14 @@ export class CarManager {
         const car = this.getCarById(carId);
         if (!car) return null;
 
+        const motionState = this.getCarMotionState(car);
+
         return {
             id: car.id,
             name: car.name,
             currentCoord: car.currentCoord,
             targetCoord: car.targetCoord,
+            motionState,
             isWaiting: car.isWaiting,
             waitReason: car.waitReason,
             blockedBy: car.blockedBy,
@@ -1345,9 +1352,9 @@ export class CarManager {
             collisionMode: this.collisionMode,
             totalCars: this.cars.length,
             activeTasks: this.collaborativeTasks.size,
-            waitingCars: this.cars.filter(c => c.isWaiting).length,
-            movingCars: this.cars.filter(c => !c.isWaiting && c.path.length > 0).length,
-            idleCars: this.cars.filter(c => c.path.length === 0).length,
+            stagnantCars: this.cars.filter(c => this.getCarMotionState(c) === "stagnant").length,
+            movingCars: this.cars.filter(c => this.getCarMotionState(c) === "moving").length,
+            stoppedCars: this.cars.filter(c => this.getCarMotionState(c) === "stopped").length,
         };
     }
 }

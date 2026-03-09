@@ -10,15 +10,15 @@
     <div v-show="isExpanded" class="panel-content">
       <div class="stats-summary">
         <div class="stat-item">
-          <span class="stat-label">運行中：</span>
+          <span class="stat-label">移動：</span>
           <span class="stat-value running">{{ runningCount }}</span>
         </div>
         <div class="stat-item">
-          <span class="stat-label">等待中：</span>
+          <span class="stat-label">停滯中：</span>
           <span class="stat-value waiting">{{ waitingCount }}</span>
         </div>
         <div class="stat-item">
-          <span class="stat-label">閒置中：</span>
+          <span class="stat-label">停止中：</span>
           <span class="stat-value idle">{{ idleCount }}</span>
         </div>
       </div>
@@ -70,21 +70,21 @@
               <span class="detail-value cargo-badge">📦 已載貨</span>
             </div>
 
-            <div class="detail-row status-row" v-if="car.isWaiting">
+            <div class="detail-row status-row" v-if="car.motionState === 'stagnant'">
               <span class="status-badge waiting">
-                ⏸️ {{ car.waitReason || '等待中' }}
+                ⏸️ {{ car.waitReason || '停滯中（尚未完成目標）' }}
               </span>
             </div>
 
-            <div class="detail-row status-row" v-else-if="car.pathLength > 0">
+            <div class="detail-row status-row" v-else-if="car.motionState === 'moving'">
               <span class="status-badge moving">
-                ▶️ 移動中
+                ▶️ 移動
               </span>
             </div>
 
             <div class="detail-row status-row" v-else>
               <span class="status-badge idle">
-                ⏹️ 閒置
+                ⏹️ 停止（目標完成）
               </span>
             </div>
           </div>
@@ -94,15 +94,15 @@
       <div class="legend">
         <div class="legend-item">
           <span class="legend-dot running"></span>
-          <span>移動中</span>
+          <span>移動</span>
         </div>
         <div class="legend-item">
           <span class="legend-dot waiting"></span>
-          <span>等待/避讓</span>
+          <span>停滯</span>
         </div>
         <div class="legend-item">
           <span class="legend-dot idle"></span>
-          <span>閒置</span>
+          <span>停止</span>
         </div>
       </div>
     </div>
@@ -125,17 +125,13 @@ export default {
   },
   computed: {
     runningCount() {
-      return this.carStatuses.filter(car => 
-        !car.isWaiting && car.pathLength > 0
-      ).length;
+      return this.carStatuses.filter(car => car.motionState === 'moving').length;
     },
     waitingCount() {
-      return this.carStatuses.filter(car => car.isWaiting).length;
+      return this.carStatuses.filter(car => car.motionState === 'stagnant').length;
     },
     idleCount() {
-      return this.carStatuses.filter(car => 
-        !car.isWaiting && car.pathLength === 0
-      ).length;
+      return this.carStatuses.filter(car => car.motionState === 'stopped').length;
     }
   },
   methods: {
@@ -143,8 +139,8 @@ export default {
       this.isExpanded = !this.isExpanded;
     },
     getCarStatusClass(car) {
-      if (car.isWaiting) return 'status-waiting';
-      if (car.pathLength > 0) return 'status-running';
+      if (car.motionState === 'stagnant') return 'status-waiting';
+      if (car.motionState === 'moving') return 'status-running';
       return 'status-idle';
     },
     getProgressPercent(car) {
