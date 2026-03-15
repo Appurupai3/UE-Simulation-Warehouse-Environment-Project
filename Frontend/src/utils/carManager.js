@@ -27,7 +27,7 @@ export class CarManager {
 
         // ⭐ 避障模式設定
         this.collisionMode = 'advanced'; // 'simple' | 'advanced'
-        this.enableCollisionAvoidance = false; // false = 車輛可穿透，不做碰撞強制阻擋
+        this.enableCollisionAvoidance = true; // true = 預設啟用避障，降低車輛互撞機率
         
         // 避障系統
         this.occupiedGrids = new Map(); // 當前占用的格子 key -> carId
@@ -39,7 +39,11 @@ export class CarManager {
         this.lastDeadlockCheck = 0;
         this.shortWaitTime = 1200; // 短暫等待時間（毫秒）
         this.maxWaitTime = 5000; // 最大等待時間（毫秒）
-        
+
+        // 路徑規劃偏好（讓車輛盡量分流，降低正面衝突）
+        this.nearbyCarPenalty = 2.5;
+        this.turnPenalty = 0.35;
+
         // ⭐ 協作任務系統
         this.collaborativeTasks = new Map(); // taskId -> { targetCoord, assignedCars: [], cargo, status }
         this.taskCounter = 0;
@@ -527,6 +531,42 @@ export class CarManager {
         return Boolean(occupier);
     }
 
+    getNearbyConflictPenalty(x, z, carId, targetCoord) {
+        if (!this.enableCollisionAvoidance) return 0;
+
+        let penalty = 0;
+        const nearbyOffsets = [
+            { x: 1, z: 0 },
+            { x: -1, z: 0 },
+            { x: 0, z: 1 },
+            { x: 0, z: -1 },
+        ];
+
+        for (const offset of nearbyOffsets) {
+            const checkX = x + offset.x;
+            const checkZ = z + offset.z;
+            if (
+                checkX < 0 ||
+                checkX >= this.gridMetrics.width ||
+                checkZ < 0 ||
+                checkZ >= this.gridMetrics.depth
+            ) {
+                continue;
+            }
+
+            if (checkX === targetCoord.x && checkZ === targetCoord.z) {
+                continue;
+            }
+
+            const occupier = this.getOccupierCarIdAtCoord({ x: checkX, z: checkZ }, carId);
+            if (occupier) {
+                penalty += this.nearbyCarPenalty;
+            }
+        }
+
+        return penalty;
+    }
+
     /**
      * A* 路徑規劃算法（比 BFS 更智能）
      */
@@ -601,7 +641,23 @@ export class CarManager {
                     continue;
                 }
 
-                const tentativeG = (gScore.get(currentKey) || 0) + 1;
+                const currentCost = gScore.get(currentKey) || 0;
+                const parentKey = cameFrom.get(currentKey);
+                const movementPenalty = this.getNearbyConflictPenalty(nx, nz, carId, targetCoord);
+
+                let turnPenalty = 0;
+                if (parentKey) {
+                    const [px, pz] = parentKey.split("-").map(Number);
+                    const prevDx = current.x - px;
+                    const prevDz = current.z - pz;
+                    const nextDx = nx - current.x;
+                    const nextDz = nz - current.z;
+                    if (prevDx !== nextDx || prevDz !== nextDz) {
+                        turnPenalty = this.turnPenalty;
+                    }
+                }
+
+                const tentativeG = currentCost + 1 + movementPenalty + turnPenalty;
 
                 if (!openSet.has(neighborKey)) {
                     openSet.set(neighborKey, { x: nx, z: nz });
