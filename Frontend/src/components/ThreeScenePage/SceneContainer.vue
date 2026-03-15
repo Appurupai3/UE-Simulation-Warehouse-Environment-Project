@@ -35,9 +35,16 @@ const emit = defineEmits(['order-complete'])
 const threeSceneRef = ref(null)
 const completedOrders = ref([])
 
-const isExecuting = computed(() => threeSceneRef.value?.isExecuting?.value ?? false)
-const executionStatus = computed(() => threeSceneRef.value?.executionStatus?.value ?? '')
-const executionFlows = computed(() => threeSceneRef.value?.executionFlows?.value ?? [])
+const unwrapExposedRef = (maybeRef, fallback) => {
+  if (maybeRef && typeof maybeRef === 'object' && 'value' in maybeRef) {
+    return maybeRef.value ?? fallback
+  }
+  return maybeRef ?? fallback
+}
+
+const isExecuting = computed(() => unwrapExposedRef(threeSceneRef.value?.isExecuting, false))
+const executionStatus = computed(() => unwrapExposedRef(threeSceneRef.value?.executionStatus, ''))
+const executionFlows = computed(() => unwrapExposedRef(threeSceneRef.value?.executionFlows, []))
 
 const parseOrderItems = (content) => {
   if (!content) return []
