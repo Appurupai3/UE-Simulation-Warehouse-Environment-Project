@@ -29,6 +29,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const routeStatus = ref("選擇車輛與目的地後派送");
     const isExecuting = ref(false);
     const executionStatus = ref("");
+    const executionFlows = ref([]);
     const carStatuses = ref([]); // ⭐ 新增：車輛狀態
     const collisionMode = ref('advanced'); // ⭐ 避障模式
     const activeTasks = ref([]); // ⭐ 協作任務
@@ -145,7 +146,23 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const pickDropDelay = 650;
 
+    async function waitForStableStagnant(carId, stagnantMs = 500) {
+        while (true) {
+            const ready = await waitForCarReady(carId);
+            if (!ready || !carManager) return false;
+
+            await pause(stagnantMs);
+
+            if (carManager.isCarReady(carId)) {
+                return true;
+            }
+        }
+    }
+
     async function dropCargoWithFallback(carId, primaryCoord, itemAssignments, deliveredItemIds) {
+        const dropReady = await waitForStableStagnant(carId, 500);
+        if (!dropReady) return false;
+
         const dropped = dropCargo(carId);
         await pause(pickDropDelay);
         if (dropped) return true;
@@ -157,6 +174,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
             await waitForCarReady(carId);
             await pause(pickDropDelay);
+
+            const retryDropReady = await waitForStableStagnant(carId, 500);
+            if (!retryDropReady) return false;
 
             const retryDrop = dropCargo(carId);
             await pause(pickDropDelay);
@@ -178,6 +198,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         await waitForCarReady(carId);
         await pause(pickDropDelay);
+
+        const pickReady = await waitForStableStagnant(carId, 500);
+        if (!pickReady) return false;
 
         const pickResult = pickUpCargo(carId);
         if (!pickResult) return false;
@@ -325,26 +348,39 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
     async function clearBlockingCargo(carId, targetBox, orderItemIds, itemAssignments, deliveredItemIds) {
         const targetCoord = targetBox.userData?.gridCoord;
-        if (!targetCoord) return;
+        if (!targetCoord) {
+            return { success: false, message: "目標貨物缺少座標" };
+        }
 
         let stack = getStackAtCoord(targetCoord);
+        let safetyCounter = 0;
+        const maxAttempts = stack.length + 2;
         while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
+            if (safetyCounter++ > maxAttempts) {
+                return { success: false, message: "移除阻擋貨物失敗：超過最大嘗試次數" };
+            }
+
             const blockingBox = stack[0];
             const blockingId = blockingBox.userData?.boxId;
+            let moved = false;
 
             if (orderItemIds?.has(blockingId)) {
                 const assignment = itemAssignments?.get(blockingId);
                 const shippingCoord = assignment?.shippingTarget?.coord;
                 if (shippingCoord) {
-                    await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
-                    deliveredItemIds?.add(blockingId);
+                    moved = await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
+                    if (moved) {
+                        deliveredItemIds?.add(blockingId);
+                    }
                 }
             } else if (itemAssignments?.has(blockingId)) {
                 const assignment = itemAssignments.get(blockingId);
                 const shippingCoord = assignment?.shippingTarget?.coord;
                 if (shippingCoord) {
-                    await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
-                    deliveredItemIds?.add(blockingId);
+                    moved = await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
+                    if (moved) {
+                        deliveredItemIds?.add(blockingId);
+                    }
                 }
             } else {
                 const stagingCoord = getNextAvailableStagingCoord(targetCoord, carId, itemAssignments, deliveredItemIds);
@@ -352,11 +388,20 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     stagingCoord,
                     ...getStagingCoordsByPriority(targetCoord, carId, itemAssignments, deliveredItemIds),
                 ].filter(Boolean);
-                await moveCargoBoxToCoords(carId, blockingBox, stagingCoords, { itemAssignments, deliveredItemIds });
+                moved = await moveCargoBoxToCoords(carId, blockingBox, stagingCoords, { itemAssignments, deliveredItemIds });
+            }
+
+            if (!moved) {
+                return {
+                    success: false,
+                    message: `無法移除阻擋貨物 ${blockingId ?? "未知"}`,
+                };
             }
 
             stack = getStackAtCoord(targetCoord);
         }
+
+        return { success: true };
     }
 
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
@@ -391,7 +436,11 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 continue;
             }
 
-            await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
+            const clearResult = await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
+            if (!clearResult.success) {
+                executionStatus.value = `商品 ${itemId} 無法清除阻擋貨物：${clearResult.message}`;
+                continue;
+            }
             const moveResult = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
             if (!moveResult) {
                 executionStatus.value = `商品 ${itemId} 卸貨失敗`;
@@ -452,6 +501,14 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 };
             });
 
+            executionFlows.value = taskConfigs.map((config, index) => ({
+                id: `${config.carId}-${config.order?.id ?? index}`,
+                carId: config.carId,
+                orderId: config.order?.id ?? "-",
+                shippingLabel: config.shippingTarget?.label ?? "-",
+                status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
+            }));
+
             const tasks = taskConfigs.map((config) => executeOrder({
                 ...config,
                 itemAssignments,
@@ -459,6 +516,13 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             }));
 
             const results = await Promise.all(tasks);
+            executionFlows.value = executionFlows.value.map((flow, index) => ({
+                ...flow,
+                status: results[index]?.success
+                    ? `訂單 ${flow.orderId} 已完成（目標 ${flow.shippingLabel}）`
+                    : `訂單 ${flow.orderId} 執行失敗，請檢查貨物狀態`,
+            }));
+
             const completedOrderIds = orderTasks
                 .slice(0, results.length)
                 .filter((_, index) => results[index]?.success)
@@ -808,6 +872,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         routeStatus,
         isExecuting,
         executionStatus,
+        executionFlows,
         carStatuses, // ⭐ 車輛狀態
         collisionMode, // ⭐ 避障模式
         activeTasks, // ⭐ 協作任務

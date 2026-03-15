@@ -22,6 +22,16 @@
       {{ executionStatus }}
     </div>
 
+    <div v-if="executionFlows.length > 0" class="space-y-2">
+      <div
+        v-for="flow in executionFlows"
+        :key="flow.id"
+        class="rounded-lg bg-white/10 px-3 py-2 text-sm text-white/80"
+      >
+        {{ flow.carId }}：{{ flow.status }}
+      </div>
+    </div>
+
     <div class="space-y-3 max-h-[420px] overflow-y-auto pr-2">
       <div v-if="orders.length === 0" class="text-center text-white/60 py-8">
         暫無訂單
@@ -58,6 +68,10 @@ const props = defineProps({
   executionStatus: {
     type: String,
     default: ''
+  },
+  executionFlows: {
+    type: Array,
+    default: () => []
   }
 })
 
