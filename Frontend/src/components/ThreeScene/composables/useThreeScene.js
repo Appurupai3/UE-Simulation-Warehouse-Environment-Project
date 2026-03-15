@@ -146,7 +146,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const pickDropDelay = 650;
 
-    async function waitForStableStagnant(carId, stagnantMs = 1000) {
+    async function waitForStableStagnant(carId, stagnantMs = 500) {
         while (true) {
             const ready = await waitForCarReady(carId);
             if (!ready || !carManager) return false;
@@ -160,7 +160,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     }
 
     async function dropCargoWithFallback(carId, primaryCoord, itemAssignments, deliveredItemIds) {
-        const dropReady = await waitForStableStagnant(carId, 1000);
+        const dropReady = await waitForStableStagnant(carId, 500);
         if (!dropReady) return false;
 
         const dropped = dropCargo(carId);
@@ -175,7 +175,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             await waitForCarReady(carId);
             await pause(pickDropDelay);
 
-            const retryDropReady = await waitForStableStagnant(carId, 1000);
+            const retryDropReady = await waitForStableStagnant(carId, 500);
             if (!retryDropReady) return false;
 
             const retryDrop = dropCargo(carId);
@@ -199,7 +199,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         await waitForCarReady(carId);
         await pause(pickDropDelay);
 
-        const pickReady = await waitForStableStagnant(carId, 1000);
+        const pickReady = await waitForStableStagnant(carId, 500);
         if (!pickReady) return false;
 
         const pickResult = pickUpCargo(carId);
