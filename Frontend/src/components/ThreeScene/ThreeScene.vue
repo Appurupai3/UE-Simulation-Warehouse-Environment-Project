@@ -50,8 +50,8 @@ const {
     executionStatus,
     executionFlows,
     setCarDestination,
-    pickUpCargo,
-    dropCargo,
+    pickUpCargoAtDestination,
+    dropCargoAtDestination,
     executeOrders,
     resetWarehouse,
 } = useThreeScene({
@@ -95,20 +95,32 @@ const handleAssignRoute = () => {
     setCarDestination(selectedCar.value, selectedDestination.value);
 };
 
-const handlePickCargo = () => {
+const handlePickCargo = async () => {
     if (!selectedCar.value) {
         routeStatus.value = "請先選擇車輛";
         return;
     }
-    pickUpCargo(selectedCar.value);
+
+    if (!selectedDestination.value) {
+        routeStatus.value = "請先選擇目標位置";
+        return;
+    }
+
+    await pickUpCargoAtDestination(selectedCar.value, selectedDestination.value);
 };
 
-const handleDropCargo = () => {
+const handleDropCargo = async () => {
     if (!selectedCar.value) {
         routeStatus.value = "請先選擇車輛";
         return;
     }
-    dropCargo(selectedCar.value);
+
+    if (!selectedDestination.value) {
+        routeStatus.value = "請先選擇目標位置";
+        return;
+    }
+
+    await dropCargoAtDestination(selectedCar.value, selectedDestination.value);
 };
 
 

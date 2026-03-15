@@ -122,6 +122,40 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return result.success;
     }
 
+    async function executeCargoActionAtDestination(carId, destinationId, action, actionLabel) {
+        if (!carManager) return false;
+
+        if (destinationId) {
+            const moveResult = setCarDestination(carId, destinationId);
+            if (!moveResult) {
+                routeStatus.value = `無法前往鎖定目標位置 ${destinationId}`;
+                return false;
+            }
+
+            const moveReady = await waitForCarReady(carId);
+            if (!moveReady) {
+                routeStatus.value = `${actionLabel}失敗：車輛尚未準備完成`;
+                return false;
+            }
+
+            const stagnantReady = await waitForStableStagnant(carId, 500);
+            if (!stagnantReady) {
+                routeStatus.value = `${actionLabel}失敗：車輛未停妥於目標位置`;
+                return false;
+            }
+        }
+
+        return action(carId);
+    }
+
+    async function pickUpCargoAtDestination(carId, destinationId) {
+        return executeCargoActionAtDestination(carId, destinationId, pickUpCargo, "拿取");
+    }
+
+    async function dropCargoAtDestination(carId, destinationId) {
+        return executeCargoActionAtDestination(carId, destinationId, dropCargo, "放下");
+    }
+
     function getDefaultCarId() {
         return carOptions.value[0]?.id || "";
     }
@@ -863,7 +897,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         carPriorities, // ⭐ 車輛優先級
         setCarDestination,
         pickUpCargo,
+        pickUpCargoAtDestination,
         dropCargo,
+        dropCargoAtDestination,
         executeOrders,
         resetWarehouse,
         switchCollisionMode, // ⭐ 切換避障模式
