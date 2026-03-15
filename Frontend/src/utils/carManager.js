@@ -867,7 +867,17 @@ export class CarManager {
         }
 
         // 使用 A* 算法規劃路徑
-        const pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+        let pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+        let usedBlockedFallbackPath = false;
+
+        // 若被動態障礙（其他車/預約）暫時卡住，仍建立可行路徑，交由移動流程等待與重規劃
+        if (!pathCoords && this.enableCollisionAvoidance) {
+            this.enableCollisionAvoidance = false;
+            pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+            this.enableCollisionAvoidance = true;
+            usedBlockedFallbackPath = Boolean(pathCoords);
+        }
+
         if (!pathCoords) {
             return { success: false, message: "無法找到路徑（可能被阻擋）" };
         }
@@ -892,6 +902,10 @@ export class CarManager {
 
         // 預約整條路徑
         this.reservePathGrids(car.id, pathCoords);
+
+        if (usedBlockedFallbackPath) {
+            return { success: true, message: `${car.name} 目標暫時受阻，已建立待通行路線（${pathCoords.length} 步）` };
+        }
 
         return { success: true, message: `${car.name} 路線已更新（${pathCoords.length} 步）` };
     }
