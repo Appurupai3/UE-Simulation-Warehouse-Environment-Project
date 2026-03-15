@@ -276,10 +276,29 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         });
     }
 
+    function isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds) {
+        if (!itemAssignments || itemAssignments.size === 0) return false;
+
+        for (const [itemId, assignment] of itemAssignments.entries()) {
+            if (!assignment || assignment.carId === activeCarId) continue;
+            if (deliveredItemIds?.has(itemId)) continue;
+
+            const pickupCoord = assignment.pickupCoord;
+            if (!pickupCoord) continue;
+
+            if (pickupCoord.x === coord.x && pickupCoord.z === coord.z) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
         if (!coord) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
         if (isUnloadAreaCoord(coord)) return false;
+        if (isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarPendingStackCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         return true;
     }
@@ -534,10 +553,16 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 const shippingTarget = shippingTargets[index % shippingTargets.length];
                 const carId = carIds[index % carIds.length] || getDefaultCarId();
                 (task.items || []).forEach((itemId) => {
+                    const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+                    const pickupCoord = box?.userData?.gridCoord
+                        ? { x: box.userData.gridCoord.x, z: box.userData.gridCoord.z }
+                        : null;
+
                     itemAssignments.set(itemId, {
                         orderId: task.order?.id,
                         carId,
                         shippingTarget,
+                        pickupCoord,
                     });
                 });
                 executionStatus.value = `分配 ${task.order?.id ?? ""} -> ${shippingTarget.label}`.trim();
