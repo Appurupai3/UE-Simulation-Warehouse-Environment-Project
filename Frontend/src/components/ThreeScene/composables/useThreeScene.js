@@ -167,24 +167,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         await pause(pickDropDelay);
         if (dropped) return true;
 
-        const fallbackCoords = getStagingCoordsByPriority(primaryCoord, carId, itemAssignments, deliveredItemIds);
-        for (const coord of fallbackCoords) {
-            const moved = setCarDestination(carId, `${coord.x}-${coord.z}`);
-            if (!moved) continue;
-
-            await waitForCarReady(carId);
-            await pause(pickDropDelay);
-
-            const retryDropReady = await waitForStableStagnant(carId, 500);
-            if (!retryDropReady) return false;
-
-            const retryDrop = dropCargo(carId);
-            await pause(pickDropDelay);
-            if (retryDrop) {
-                return true;
-            }
-        }
-
+        // 鎖定原目標位置：放下失敗時不再嘗試移到其他格子
         return false;
     }
 
