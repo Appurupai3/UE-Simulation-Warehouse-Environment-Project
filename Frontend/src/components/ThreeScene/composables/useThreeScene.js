@@ -146,7 +146,23 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const pickDropDelay = 650;
 
+    async function waitForStableStagnant(carId, stagnantMs = 1000) {
+        while (true) {
+            const ready = await waitForCarReady(carId);
+            if (!ready || !carManager) return false;
+
+            await pause(stagnantMs);
+
+            if (carManager.isCarReady(carId)) {
+                return true;
+            }
+        }
+    }
+
     async function dropCargoWithFallback(carId, primaryCoord, itemAssignments, deliveredItemIds) {
+        const dropReady = await waitForStableStagnant(carId, 1000);
+        if (!dropReady) return false;
+
         const dropped = dropCargo(carId);
         await pause(pickDropDelay);
         if (dropped) return true;
@@ -158,6 +174,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
             await waitForCarReady(carId);
             await pause(pickDropDelay);
+
+            const retryDropReady = await waitForStableStagnant(carId, 1000);
+            if (!retryDropReady) return false;
 
             const retryDrop = dropCargo(carId);
             await pause(pickDropDelay);
@@ -179,6 +198,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         await waitForCarReady(carId);
         await pause(pickDropDelay);
+
+        const pickReady = await waitForStableStagnant(carId, 1000);
+        if (!pickReady) return false;
 
         const pickResult = pickUpCargo(carId);
         if (!pickResult) return false;
@@ -484,12 +506,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 carId: config.carId,
                 orderId: config.order?.id ?? "-",
                 shippingLabel: config.shippingTarget?.label ?? "-",
-                steps: [
-                    { key: "moveToPickup", label: "移動到取貨位置" },
-                    { key: "pickUp", label: "拿起貨物" },
-                    { key: "moveToDrop", label: `移動到 ${config.shippingTarget?.label ?? "目標位"}` },
-                    { key: "drop", label: "放下貨物" },
-                ],
+                status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
             }));
 
             const tasks = taskConfigs.map((config) => executeOrder({
@@ -499,6 +516,13 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             }));
 
             const results = await Promise.all(tasks);
+            executionFlows.value = executionFlows.value.map((flow, index) => ({
+                ...flow,
+                status: results[index]?.success
+                    ? `訂單 ${flow.orderId} 已完成（目標 ${flow.shippingLabel}）`
+                    : `訂單 ${flow.orderId} 執行失敗，請檢查貨物狀態`,
+            }));
+
             const completedOrderIds = orderTasks
                 .slice(0, results.length)
                 .filter((_, index) => results[index]?.success)
