@@ -1090,12 +1090,26 @@ export class CarManager {
     isObstacleLikelyToMoveAway(occupierCar, targetCoord) {
         if (!occupierCar || occupierCar.path.length === 0) return false;
 
-        const remainingPath = occupierCar.path.slice(occupierCar.pathIndex);
-        return remainingPath.some((point) => {
-            const coord = point?.coord;
-            if (!coord) return false;
-            return coord.x !== targetCoord.x || coord.z !== targetCoord.z;
-        });
+        const remainingPath = occupierCar.path.slice(occupierCar.pathIndex)
+            .map((point) => point?.coord)
+            .filter(Boolean);
+        if (remainingPath.length === 0) return false;
+
+        // 只要阻擋車後續還有至少一步，通常可視為會離開目前阻擋格
+        if (remainingPath.length > 1) return true;
+
+        const [nextCoord] = remainingPath;
+        if (!nextCoord) return false;
+
+        // 若阻擋車的最終目標與當前阻擋格不同，也視為會移開
+        if (occupierCar.targetCoord) {
+            const sameAsBlockingTarget =
+                occupierCar.targetCoord.x === targetCoord.x &&
+                occupierCar.targetCoord.z === targetCoord.z;
+            if (!sameAsBlockingTarget) return true;
+        }
+
+        return nextCoord.x !== targetCoord.x || nextCoord.z !== targetCoord.z;
     }
 
     tryReplanForMovingObstacle(carData, nowMs) {
