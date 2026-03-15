@@ -325,26 +325,39 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
     async function clearBlockingCargo(carId, targetBox, orderItemIds, itemAssignments, deliveredItemIds) {
         const targetCoord = targetBox.userData?.gridCoord;
-        if (!targetCoord) return;
+        if (!targetCoord) {
+            return { success: false, message: "目標貨物缺少座標" };
+        }
 
         let stack = getStackAtCoord(targetCoord);
+        let safetyCounter = 0;
+        const maxAttempts = stack.length + 2;
         while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
+            if (safetyCounter++ > maxAttempts) {
+                return { success: false, message: "移除阻擋貨物失敗：超過最大嘗試次數" };
+            }
+
             const blockingBox = stack[0];
             const blockingId = blockingBox.userData?.boxId;
+            let moved = false;
 
             if (orderItemIds?.has(blockingId)) {
                 const assignment = itemAssignments?.get(blockingId);
                 const shippingCoord = assignment?.shippingTarget?.coord;
                 if (shippingCoord) {
-                    await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
-                    deliveredItemIds?.add(blockingId);
+                    moved = await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
+                    if (moved) {
+                        deliveredItemIds?.add(blockingId);
+                    }
                 }
             } else if (itemAssignments?.has(blockingId)) {
                 const assignment = itemAssignments.get(blockingId);
                 const shippingCoord = assignment?.shippingTarget?.coord;
                 if (shippingCoord) {
-                    await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
-                    deliveredItemIds?.add(blockingId);
+                    moved = await moveCargoBoxToCoords(carId, blockingBox, [shippingCoord], { itemAssignments, deliveredItemIds });
+                    if (moved) {
+                        deliveredItemIds?.add(blockingId);
+                    }
                 }
             } else {
                 const stagingCoord = getNextAvailableStagingCoord(targetCoord, carId, itemAssignments, deliveredItemIds);
@@ -352,11 +365,20 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     stagingCoord,
                     ...getStagingCoordsByPriority(targetCoord, carId, itemAssignments, deliveredItemIds),
                 ].filter(Boolean);
-                await moveCargoBoxToCoords(carId, blockingBox, stagingCoords, { itemAssignments, deliveredItemIds });
+                moved = await moveCargoBoxToCoords(carId, blockingBox, stagingCoords, { itemAssignments, deliveredItemIds });
+            }
+
+            if (!moved) {
+                return {
+                    success: false,
+                    message: `無法移除阻擋貨物 ${blockingId ?? "未知"}`,
+                };
             }
 
             stack = getStackAtCoord(targetCoord);
         }
+
+        return { success: true };
     }
 
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
@@ -391,7 +413,11 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 continue;
             }
 
-            await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
+            const clearResult = await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
+            if (!clearResult.success) {
+                executionStatus.value = `商品 ${itemId} 無法清除阻擋貨物：${clearResult.message}`;
+                continue;
+            }
             const moveResult = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
             if (!moveResult) {
                 executionStatus.value = `商品 ${itemId} 卸貨失敗`;
