@@ -29,6 +29,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const routeStatus = ref("選擇車輛與目的地後派送");
     const isExecuting = ref(false);
     const executionStatus = ref("");
+    const executionFlows = ref([]);
     const carStatuses = ref([]); // ⭐ 新增：車輛狀態
     const collisionMode = ref('advanced'); // ⭐ 避障模式
     const activeTasks = ref([]); // ⭐ 協作任務
@@ -478,6 +479,19 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 };
             });
 
+            executionFlows.value = taskConfigs.map((config, index) => ({
+                id: `${config.carId}-${config.order?.id ?? index}`,
+                carId: config.carId,
+                orderId: config.order?.id ?? "-",
+                shippingLabel: config.shippingTarget?.label ?? "-",
+                steps: [
+                    { key: "moveToPickup", label: "移動到取貨位置" },
+                    { key: "pickUp", label: "拿起貨物" },
+                    { key: "moveToDrop", label: `移動到 ${config.shippingTarget?.label ?? "目標位"}` },
+                    { key: "drop", label: "放下貨物" },
+                ],
+            }));
+
             const tasks = taskConfigs.map((config) => executeOrder({
                 ...config,
                 itemAssignments,
@@ -834,6 +848,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         routeStatus,
         isExecuting,
         executionStatus,
+        executionFlows,
         carStatuses, // ⭐ 車輛狀態
         collisionMode, // ⭐ 避障模式
         activeTasks, // ⭐ 協作任務

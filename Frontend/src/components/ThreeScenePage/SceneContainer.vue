@@ -6,6 +6,7 @@
         :orders="orders"
         :is-executing="isExecuting"
         :execution-status="executionStatus"
+        :execution-flows="executionFlows"
         @start-execution="handleStartExecution"
       />
       <ExecutionToolsPanel
@@ -13,7 +14,6 @@
         @reset-warehouse="handleResetWarehouse"
       />
     </div>
-    <CarMoveFlowChart />
   </div>
 </template>
 
@@ -22,7 +22,6 @@ import { computed, ref } from 'vue'
 import ThreeScene from '../ThreeScene/ThreeScene.vue'
 import OrderExecutionPanel from './OrderExecutionPanel.vue'
 import ExecutionToolsPanel from './ExecutionToolsPanel.vue'
-import CarMoveFlowChart from './CarMoveFlowChart.vue'
 
 const props = defineProps({
   orders: {
@@ -38,6 +37,7 @@ const completedOrders = ref([])
 
 const isExecuting = computed(() => threeSceneRef.value?.isExecuting?.value ?? false)
 const executionStatus = computed(() => threeSceneRef.value?.executionStatus?.value ?? '')
+const executionFlows = computed(() => threeSceneRef.value?.executionFlows?.value ?? [])
 
 const parseOrderItems = (content) => {
   if (!content) return []
