@@ -13,7 +13,7 @@
         @reset-warehouse="handleResetWarehouse"
       />
     </div>
-
+    <CarMoveFlowChart />
   </div>
 </template>
 
@@ -22,6 +22,7 @@ import { computed, ref } from 'vue'
 import ThreeScene from '../ThreeScene/ThreeScene.vue'
 import OrderExecutionPanel from './OrderExecutionPanel.vue'
 import ExecutionToolsPanel from './ExecutionToolsPanel.vue'
+import CarMoveFlowChart from './CarMoveFlowChart.vue'
 
 const props = defineProps({
   orders: {
