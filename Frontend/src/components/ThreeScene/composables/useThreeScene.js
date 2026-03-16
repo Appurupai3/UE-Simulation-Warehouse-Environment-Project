@@ -464,6 +464,11 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
             const blockingBox = stack[0];
             const blockingId = blockingBox.userData?.boxId;
+            const sourceCoord = blockingBox.userData?.gridCoord;
+            const sourceCoordKey = sourceCoord ? `${sourceCoord.x}-${sourceCoord.z}` : null;
+            if (sourceCoordKey) {
+                excludedStackPlacementCoordKeys.add(sourceCoordKey);
+            }
             let moved = false;
 
             if (orderItemIds?.has(blockingId)) {
@@ -487,6 +492,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             } else {
                 const maxRepositionSearchRetries = 3;
                 const excludedCoordKeys = new Set();
+                if (sourceCoordKey) {
+                    excludedCoordKeys.add(sourceCoordKey);
+                }
 
                 for (let retry = 0; retry < maxRepositionSearchRetries && !moved; retry++) {
                     refreshWarehouseDataForPlacement();
