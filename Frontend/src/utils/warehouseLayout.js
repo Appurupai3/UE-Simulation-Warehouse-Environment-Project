@@ -1,5 +1,6 @@
 export const LAYOUT_SIZE = 15;
 export const DEFAULT_MAX_STACK = 5;
+export const DEFAULT_SHELF_HEIGHT = 5;
 
 export const TOOL_OPTIONS = [
   { key: 'cargo', label: '貨物', emoji: '📦' },
@@ -83,6 +84,7 @@ export function createDefaultWarehouseLayout() {
     width: LAYOUT_SIZE,
     height: LAYOUT_SIZE,
     maxStack: DEFAULT_MAX_STACK,
+    shelfHeight: DEFAULT_SHELF_HEIGHT,
     cells,
     updatedAt: new Date().toISOString()
   };
@@ -104,6 +106,10 @@ export function normalizeWarehouseLayout(input) {
 
   if (Number.isFinite(Number(input.maxStack))) {
     layout.maxStack = Math.max(1, Math.floor(Number(input.maxStack)));
+  }
+
+  if (Number.isFinite(Number(input.shelfHeight))) {
+    layout.shelfHeight = Math.max(3, Math.min(10, Math.floor(Number(input.shelfHeight))));
   }
 
   layout.updatedAt = input.updatedAt || layout.updatedAt;

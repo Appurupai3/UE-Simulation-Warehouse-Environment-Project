@@ -42,6 +42,7 @@ class WarehouseLayout(BaseModel):
     width: int = 15
     height: int = 15
     maxStack: int = 5
+    shelfHeight: int = 5
     cells: List[List[Union[str, Dict[str, Any]]]]
     updatedAt: Optional[str] = None
 
@@ -69,6 +70,7 @@ def _default_layout() -> Dict[str, Any]:
         "width": 15,
         "height": 15,
         "maxStack": 5,
+        "shelfHeight": 5,
         "cells": cells,
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -260,6 +262,7 @@ async def get_warehouse_layout():
 @router.post('/warehouse-layout')
 async def save_warehouse_layout(layout: WarehouseLayout):
     payload = layout.dict()
+    payload["shelfHeight"] = max(3, min(10, int(payload.get("shelfHeight", 5))))
     payload["updatedAt"] = datetime.now(timezone.utc).isoformat()
     _save_layout(payload)
     return {"message": "倉儲配置已儲存", "layout": payload}

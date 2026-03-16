@@ -36,8 +36,11 @@ export function setupHoverDetection({ renderer, camera, container, boxes, hovere
 
             if (box && box.userData?.boxId) {
                 const containerRect = container.getBoundingClientRect();
+                const resolvedBoxId = box.userData.caseId
+                    ? String(box.userData.caseId).replace(/^case\s*/i, '')
+                    : box.userData.boxId;
                 hoveredBoxInfo.value = {
-                    boxId: box.userData.boxId,
+                    boxId: resolvedBoxId,
                     productName: box.userData.productName,
                 };
                 tooltipPosition.value = {

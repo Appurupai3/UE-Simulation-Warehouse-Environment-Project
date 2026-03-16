@@ -17,8 +17,9 @@ export function createBoxGrid({
     const modelSize = finalBox.getSize(new THREE.Vector3());
     const modelCenter = finalBox.getCenter(new THREE.Vector3());
 
-    const boxWidth = Math.max(Math.abs(modelSize.x), 0.01);
-    const boxDepth = Math.max(Math.abs(modelSize.z), 0.01);
+    const baseFootprint = Math.max(Math.abs(modelSize.x), Math.abs(modelSize.z), 0.01);
+    const boxWidth = baseFootprint;
+    const boxDepth = baseFootprint;
     const boxHeight = Math.max(Math.abs(modelSize.y), 0.01);
 
     const spacingX = boxWidth * 0.2;
@@ -75,6 +76,7 @@ export function createBoxGrid({
                 const defaultPosition = clonedModel.position.clone();
                 clonedModel.userData = {
                     boxId,
+                    caseId: `case ${boxId}`,
                     productName: `商品 ${boxId}`,
                     gridCoord: { x, y, z },
                     defaultGridCoord: { x, y, z },

@@ -9,7 +9,7 @@ import { createTrackSystem } from '../utils/trackSystem';
 import { createPlayer } from '../utils/player';
 import { setupInputHandlers } from '../utils/inputHandlers';
 import { setupHoverDetection } from '../utils/hoverDetection';
-import { unloadBays, unloadAreaCells } from '../../../utils/warehouseConfig.js';
+import { warehouseGrid, unloadBays, unloadAreaCells } from '../../../utils/warehouseConfig.js';
 import { fetchWarehouseLayout } from '../../../utils/warehouseLayoutApi.js';
 
 export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPosition }) {
@@ -84,13 +84,20 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             };
         }
 
-        return {
+        const parsed = {
             cargo: Boolean(cell.cargo),
             cargoCount: Math.max(0, Number(cell.cargoCount || 0)),
             unload: Boolean(cell.unload),
             car: Boolean(cell.car),
             obstacle: Boolean(cell.obstacle),
         };
+
+        if (parsed.unload || parsed.obstacle) {
+            parsed.cargo = false;
+            parsed.cargoCount = 0;
+        }
+
+        return parsed;
     }
 
     async function buildWarehouseFromLayout(layout) {
@@ -130,6 +137,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         carManager?.dispose?.();
         carManager = new CarManager(scene);
+
+        const requestedShelfHeight = Math.max(3, Math.min(10, Math.floor(Number(layout?.shelfHeight || 5))));
+        warehouseGrid.height = requestedShelfHeight;
 
         const layoutUnloadCells = new Set();
         const layoutCargoCells = new Set();
@@ -202,12 +212,13 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         obstacleMeshes.forEach(mesh => scene.remove(mesh));
         obstacleMeshes = [];
         obstacles.forEach(({ x, y }) => {
-            const geometry = new THREE.BoxGeometry(metrics.boxWidth, metrics.boxHeight, metrics.boxDepth);
+            const obstacleHeight = metrics.pillarTopY - metrics.bottomY;
+            const geometry = new THREE.BoxGeometry(metrics.boxWidth, obstacleHeight, metrics.boxDepth);
             const material = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(
                 metrics.startX + x * (metrics.boxWidth + metrics.spacingX) - metrics.modelCenter.x,
-                metrics.startY - metrics.modelCenter.y,
+                metrics.bottomY + obstacleHeight / 2,
                 metrics.startZ + y * (metrics.boxDepth + metrics.spacingZ) - metrics.modelCenter.z
             );
             scene.add(mesh);

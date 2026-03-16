@@ -30,6 +30,9 @@
       <label class="text-sm text-gray-700">該行貨物層數
         <input v-model.number="rowCargoCount" type="number" min="0" max="20" class="mt-1 w-full border rounded px-2 py-1" />
       </label>
+      <label class="text-sm text-gray-700">架子高度 (3~10)
+        <input v-model.number="shelfHeight" type="number" min="3" max="10" class="mt-1 w-full border rounded px-2 py-1" />
+      </label>
       <div class="lg:col-span-3 flex flex-wrap gap-2">
         <button class="px-3 py-2 rounded bg-indigo-500 text-white text-sm" @click="applyGlobalCargo">套用全域貨量</button>
         <button class="px-3 py-2 rounded bg-indigo-400 text-white text-sm" @click="applyRowCargo">套用該行貨量</button>
@@ -74,6 +77,7 @@ const message = ref('');
 const globalCargoCount = ref(5);
 const selectedRow = ref(1);
 const rowCargoCount = ref(5);
+const shelfHeight = ref(5);
 
 const gridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${LAYOUT_SIZE}, minmax(34px, 1fr))`
@@ -107,6 +111,7 @@ const paintCell = (index) => {
   const cell = layout.value.cells[y][x];
 
   if (selectedTool.value === 'cargo') {
+    if (cell.unload) return;
     cell.obstacle = false;
     applyCargoCount(cell, globalCargoCount.value);
     return;
@@ -120,6 +125,15 @@ const paintCell = (index) => {
   if (selectedTool.value === 'unload') {
     const next = !(cell.unload && x < LAYOUT_SIZE - 1 && layout.value.cells[y][x + 1].unload);
     setUnloadPair(x, y, next);
+    if (next) {
+      const rightCell = layout.value.cells[y][Math.min(x + 1, LAYOUT_SIZE - 1)];
+      cell.cargo = false;
+      cell.cargoCount = 0;
+      rightCell.cargo = false;
+      rightCell.cargoCount = 0;
+      cell.obstacle = false;
+      rightCell.obstacle = false;
+    }
     return;
   }
 
@@ -146,7 +160,7 @@ const paintCell = (index) => {
 const applyGlobalCargo = () => {
   layout.value.cells.forEach((row) => {
     row.forEach((cell) => {
-      if (!cell.obstacle) applyCargoCount(cell, globalCargoCount.value);
+      if (!cell.obstacle && !cell.unload && cell.cargo) applyCargoCount(cell, globalCargoCount.value);
     });
   });
 };
@@ -154,7 +168,7 @@ const applyGlobalCargo = () => {
 const applyRowCargo = () => {
   const rowIndex = Math.max(1, Math.min(LAYOUT_SIZE, Number(selectedRow.value || 1))) - 1;
   layout.value.cells[rowIndex].forEach((cell) => {
-    if (!cell.obstacle) applyCargoCount(cell, rowCargoCount.value);
+    if (!cell.obstacle && !cell.unload && cell.cargo) applyCargoCount(cell, rowCargoCount.value);
   });
 };
 
@@ -172,11 +186,13 @@ const load = async () => {
   layout.value = await fetchWarehouseLayout();
   globalCargoCount.value = layout.value.maxStack || 5;
   rowCargoCount.value = globalCargoCount.value;
+  shelfHeight.value = Math.max(3, Math.min(10, Number(layout.value.shelfHeight || 5)));
   message.value = `已載入 (${new Date().toLocaleTimeString()})`;
 };
 
 const save = async () => {
   layout.value.maxStack = normalizeCargoCount(globalCargoCount.value) || 1;
+  layout.value.shelfHeight = Math.max(3, Math.min(10, Math.floor(Number(shelfHeight.value || 5))));
   layout.value.updatedAt = new Date().toISOString();
   await saveWarehouseLayout(layout.value);
   message.value = `已儲存 (${new Date().toLocaleTimeString()})`;
@@ -186,6 +202,7 @@ const resetDefault = () => {
   layout.value = createDefaultWarehouseLayout();
   globalCargoCount.value = layout.value.maxStack;
   rowCargoCount.value = layout.value.maxStack;
+  shelfHeight.value = layout.value.shelfHeight || 5;
   message.value = '已回復預設配置，記得按「儲存到後端」';
 };
 
