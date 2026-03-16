@@ -294,11 +294,33 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return false;
     }
 
+    function isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds) {
+        if (!itemAssignments || itemAssignments.size === 0) return false;
+
+        for (const [itemId, assignment] of itemAssignments.entries()) {
+            if (!assignment || assignment.carId === activeCarId) continue;
+            if (deliveredItemIds?.has(itemId)) continue;
+
+            const pickupCoord = assignment.pickupCoord;
+            if (pickupCoord && pickupCoord.x === coord.x && pickupCoord.z === coord.z) {
+                return true;
+            }
+
+            const shippingCoord = assignment.shippingTarget?.coord;
+            if (shippingCoord && shippingCoord.x === coord.x && shippingCoord.z === coord.z) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
         if (!coord) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
         if (isUnloadAreaCoord(coord)) return false;
         if (isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
+        if (isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarPendingStackCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         return true;
     }
