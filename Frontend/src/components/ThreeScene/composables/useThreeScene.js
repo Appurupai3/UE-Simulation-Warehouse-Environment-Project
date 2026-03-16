@@ -42,6 +42,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         idleCars: 0
     });
     const carPriorities = ref({}); // ⭐ 車輛優先級
+    const activeStackClearingCoordKeys = new Set();
 
     const unloadBaysConfig = unloadBays;
 
@@ -315,10 +316,16 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return false;
     }
 
+    function isActiveStackClearingCoord(coord) {
+        if (!coord) return false;
+        return activeStackClearingCoordKeys.has(`${coord.x}-${coord.z}`);
+    }
+
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
         if (!coord) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
         if (isUnloadAreaCoord(coord)) return false;
+        if (isActiveStackClearingCoord(coord)) return false;
         if (isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarPendingStackCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
@@ -427,10 +434,14 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             return { success: false, message: "目標貨物缺少座標" };
         }
 
-        let stack = getStackAtCoord(targetCoord);
-        let safetyCounter = 0;
-        const maxAttempts = stack.length + 2;
-        while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
+        const clearingCoordKey = `${targetCoord.x}-${targetCoord.z}`;
+        activeStackClearingCoordKeys.add(clearingCoordKey);
+
+        try {
+            let stack = getStackAtCoord(targetCoord);
+            let safetyCounter = 0;
+            const maxAttempts = stack.length + 2;
+            while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
             if (safetyCounter++ > maxAttempts) {
                 return { success: false, message: "移除阻擋貨物失敗：超過最大嘗試次數" };
             }
@@ -488,9 +499,12 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             }
 
             stack = getStackAtCoord(targetCoord);
-        }
+            }
 
-        return { success: true };
+            return { success: true };
+        } finally {
+            activeStackClearingCoordKeys.delete(clearingCoordKey);
+        }
     }
 
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
