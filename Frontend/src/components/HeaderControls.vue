@@ -23,6 +23,12 @@
           開啟 3D 場景頁面
         </button>
         <button
+          @click="$emit('toggle-layout-editor')"
+          class="px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-all duration-300 font-medium"
+        >
+          🧩 客製化倉儲編輯器
+        </button>
+        <button
           @click="$emit('toggle-connection')"
           :class="isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'"
           class="px-4 py-2 text-white rounded-lg transition-all duration-300 font-medium"
@@ -53,5 +59,5 @@ const { isConnected, errorMessage } = defineProps({
   }
 })
 
-defineEmits(['open-three', 'toggle-connection'])
+defineEmits(['open-three', 'toggle-connection', 'toggle-layout-editor'])
 </script>

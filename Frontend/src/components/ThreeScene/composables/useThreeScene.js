@@ -10,9 +10,10 @@ import { createPlayer } from '../utils/player';
 import { setupInputHandlers } from '../utils/inputHandlers';
 import { setupHoverDetection } from '../utils/hoverDetection';
 import { unloadBays, unloadAreaCells } from '../../../utils/warehouseConfig.js';
+import { fetchWarehouseLayout } from '../../../utils/warehouseLayoutApi.js';
 
 export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPosition }) {
-    let scene, camera, renderer, boxes = [], baseModel = null, trackPieces = [];
+    let scene, camera, renderer, boxes = [], baseModel = null, trackPieces = [], obstacleMeshes = [];
     let currentModelSize = null;
     let gridMetricsCache = null;
     let player = null, carManager = null;
@@ -45,6 +46,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     const activeStackClearingCoordKeys = new Set();
     const excludedStackPlacementCoordKeys = new Set();
 
+    let unloadAreaCellsConfig = new Set(unloadAreaCells);
+    let allowedCargoCells = null;
+    let customCarCoords = [];
     const unloadBaysConfig = unloadBays;
 
     function init() {
@@ -60,7 +64,26 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         animate();
     }
 
-    function loadModel() {
+    async function loadModel() {
+        const layout = await fetchWarehouseLayout();
+        const layoutUnloadCells = new Set();
+        const layoutCargoCells = new Set();
+        const layoutObstacleCells = [];
+        customCarCoords = [];
+
+        layout.cells.forEach((row, y) => {
+            row.forEach((cell, x) => {
+                const key = `${x}-${y}`;
+                if (cell === 'unload') layoutUnloadCells.add(key);
+                if (cell === 'cargo') layoutCargoCells.add(key);
+                if (cell === 'obstacle') layoutObstacleCells.push({ x, y });
+                if (cell === 'car') customCarCoords.push({ x, y });
+            });
+        });
+
+        unloadAreaCellsConfig = layoutUnloadCells.size > 0 ? layoutUnloadCells : new Set(unloadAreaCells);
+        allowedCargoCells = layoutCargoCells;
+
         const loader = new GLTFLoader();
         loader.load("/blue_box.glb", (gltf) => {
             baseModel = processModel(gltf.scene);
@@ -68,12 +91,14 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 scene,
                 baseModel,
                 boxes,
-                unloadAreaCells,
+                unloadAreaCells: unloadAreaCellsConfig,
+                allowedCargoCells,
                 onComplete: (metrics) => {
                     gridMetricsCache = metrics;
                     currentModelSize = metrics.modelSize;
                     adjustCamera(metrics);
                     createTrackSystem({ scene, baseModel, trackPieces, gridMetrics: metrics, unloadBays: unloadBaysConfig });
+                    renderObstacleMarkers(layoutObstacleCells, metrics);
                     player = createPlayer(scene, metrics.modelSize);
                     if (carManager) {
                         carManager.setCargoBoxes(boxes);
@@ -88,6 +113,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                                     id: `${i}`,
                                     label: `Y${i + 1}`,
                                 }));
+                                placeCarsByCustomLayout();
                                 routeStatus.value = "車輛已載入，請選擇目的地";
                             })
                             .catch(() => {
@@ -100,6 +126,40 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     });
                 }
             });
+        });
+    }
+
+    function renderObstacleMarkers(obstacles, metrics) {
+        obstacleMeshes.forEach(mesh => scene.remove(mesh));
+        obstacleMeshes = [];
+        obstacles.forEach(({ x, y }) => {
+            const geometry = new THREE.BoxGeometry(metrics.boxWidth * 0.8, metrics.boxHeight * 0.8, metrics.boxDepth * 0.8);
+            const material = new THREE.MeshStandardMaterial({ color: 0x4b5563 });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(
+                metrics.startX + x * (metrics.boxWidth + metrics.spacingX) - metrics.modelCenter.x,
+                metrics.startY - metrics.modelCenter.y,
+                metrics.startZ + y * (metrics.boxDepth + metrics.spacingZ) - metrics.modelCenter.z
+            );
+            scene.add(mesh);
+            obstacleMeshes.push(mesh);
+        });
+    }
+
+    function placeCarsByCustomLayout() {
+        if (!carManager || !Array.isArray(carManager.cars) || customCarCoords.length === 0) return;
+        carManager.occupiedGrids.clear();
+        carManager.cars.forEach((car, index) => {
+            const coord = customCarCoords[index];
+            if (!coord) return;
+            const heading = car.heading?.clone?.() || new THREE.Vector3(0, 0, -1);
+            const targetCoord = { x: coord.x, z: coord.y };
+            const point = carManager.getCargoAlignedPosition(targetCoord, heading);
+            car.currentCoord = targetCoord;
+            car.path = [{ position: point.clone(), coord: targetCoord, direction: heading.clone() }];
+            car.pathIndex = 0;
+            car.model.position.copy(point);
+            carManager.occupiedGrids.set(`${targetCoord.x}-${targetCoord.z}`, car.id);
         });
     }
 
@@ -258,7 +318,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     }
 
     function isUnloadAreaCoord(coord) {
-        return unloadAreaCells.has(`${coord.x}-${coord.z}`);
+        return unloadAreaCellsConfig.has(`${coord.x}-${coord.z}`);
     }
 
     function isOtherCarPendingStackCoord(coord, activeCarId, itemAssignments, deliveredItemIds) {
@@ -919,16 +979,42 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             scene.remove(track);
         });
 
+        obstacleMeshes.forEach((mesh) => {
+            mesh.geometry?.dispose?.();
+            if (Array.isArray(mesh.material)) {
+                mesh.material.forEach((m) => m.dispose?.());
+            } else {
+                mesh.material?.dispose?.();
+            }
+            scene.remove(mesh);
+        });
+        obstacleMeshes = [];
+
         carManager?.dispose();
         renderer?.dispose();
     }
 
-    function resetWarehouse() {
+    async function resetWarehouse() {
         if (!scene) return;
+        const layout = await fetchWarehouseLayout();
+        const cellTypeMap = new Map();
+        const obstacleCells = [];
+        customCarCoords = [];
+        layout.cells.forEach((row, y) => {
+            row.forEach((cell, x) => {
+                cellTypeMap.set(`${x}-${y}`, cell);
+                if (cell === 'obstacle') obstacleCells.push({ x, y });
+                if (cell === 'car') customCarCoords.push({ x, y });
+            });
+        });
+
         boxes.forEach((box) => {
             const defaultPosition = box.userData?.defaultPosition;
             const defaultGridCoord = box.userData?.defaultGridCoord;
             if (!defaultPosition || !defaultGridCoord) return;
+
+            const cellType = cellTypeMap.get(`${defaultGridCoord.x}-${defaultGridCoord.z}`) || 'empty';
+            const shouldKeepCargo = cellType === 'cargo';
 
             if (box.parent !== scene) {
                 scene.attach(box);
@@ -938,10 +1024,16 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             box.updateMatrixWorld(true);
 
             box.userData.gridCoord = { ...defaultGridCoord };
-            box.userData.isPicked = false;
+            box.userData.isPicked = !shouldKeepCargo;
             box.userData.attachedToCarId = null;
             box.userData.originalParent = scene;
+            box.visible = shouldKeepCargo;
         });
+
+        if (gridMetricsCache) {
+            renderObstacleMarkers(obstacleCells, gridMetricsCache);
+        }
+        placeCarsByCustomLayout();
 
         if (currentModelSize) {
             saveBoxData(boxes, currentModelSize);

@@ -34,6 +34,52 @@ CARGO_DATA_FILE = Path(__file__).parent.parent.parent / "data" / "cargo_data.jso
 # 貨物數據庫
 _cargo_db: List[Dict[str, Any]] = []
 
+WAREHOUSE_LAYOUT_FILE = Path(__file__).parent.parent.parent / "data" / "warehouse_layout.json"
+
+
+class WarehouseLayout(BaseModel):
+    version: int = 1
+    width: int = 15
+    height: int = 15
+    cells: List[List[str]]
+    updatedAt: Optional[str] = None
+
+
+def _default_layout() -> Dict[str, Any]:
+    cells = [["empty" for _ in range(15)] for _ in range(15)]
+    for y in range(10):
+        for x in range(5):
+            cells[y][x] = "cargo"
+    cells[0][0] = "unload"
+    cells[0][1] = "unload"
+    cells[0][3] = "unload"
+    cells[0][4] = "unload"
+    cells[1][0] = "car"
+    cells[1][4] = "car"
+    return {
+        "version": 1,
+        "width": 15,
+        "height": 15,
+        "cells": cells,
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _load_layout() -> Dict[str, Any]:
+    if not WAREHOUSE_LAYOUT_FILE.exists():
+        return _default_layout()
+    try:
+        with open(WAREHOUSE_LAYOUT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return _default_layout()
+
+
+def _save_layout(layout: Dict[str, Any]):
+    WAREHOUSE_LAYOUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(WAREHOUSE_LAYOUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(layout, f, ensure_ascii=False, indent=2)
+
 
 # 加載貨物數據
 def load_cargo_data():
@@ -195,6 +241,19 @@ async def clear_cargo_data():
     _cargo_db = []
     save_cargo_data()
     return {"message": "貨物數據已清空", "total_cargo": 0}
+
+
+@router.get('/warehouse-layout')
+async def get_warehouse_layout():
+    return {"layout": _load_layout()}
+
+
+@router.post('/warehouse-layout')
+async def save_warehouse_layout(layout: WarehouseLayout):
+    payload = layout.dict()
+    payload["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    _save_layout(payload)
+    return {"message": "倉儲配置已儲存", "layout": payload}
 
 
 """

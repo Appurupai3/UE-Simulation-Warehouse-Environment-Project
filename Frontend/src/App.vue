@@ -6,7 +6,10 @@
         :error-message="errorMessage"
         @open-three="openThreeScene"
         @toggle-connection="toggleConnection"
+        @toggle-layout-editor="showLayoutEditor = !showLayoutEditor"
       />
+
+      <WarehouseLayoutEditor v-if="showLayoutEditor" />
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <OrderList
@@ -34,12 +37,15 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import HeaderControls from './components/HeaderControls.vue'
+import WarehouseLayoutEditor from './components/WarehouseLayoutEditor.vue'
 import OrderList from './components/OrderList.vue'
 import OrderForm from './components/OrderForm.vue'
 import { useOrderNumbers } from './composables/useOrderNumbers'
 import { useWebSocket } from './composables/useWebSocket'
+
+const showLayoutEditor = ref(false)
 
 const {
   numbers,

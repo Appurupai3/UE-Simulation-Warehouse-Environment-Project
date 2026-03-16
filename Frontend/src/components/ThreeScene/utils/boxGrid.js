@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { warehouseGrid } from "../../../utils/warehouseConfig";
 
-export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComplete }) {
+export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowedCargoCells = null, onComplete }) {
     const { width, depth, height } = warehouseGrid;
     
     const finalBox = new THREE.Box3().setFromObject(baseModel);
@@ -43,6 +43,7 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
 
             for (let y = 0; y < height; y++) {
                 if (isUnloadCell) continue;
+                if (allowedCargoCells && !allowedCargoCells.has(`${x}-${z}`)) continue;
 
                 const targetCenterX = startX + x * (boxWidth + spacingX);
                 const targetCenterZ = startZ + z * (boxDepth + spacingZ);
