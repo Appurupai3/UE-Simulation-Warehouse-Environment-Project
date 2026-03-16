@@ -66,66 +66,135 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
     async function loadModel() {
         const layout = await fetchWarehouseLayout();
+        const loader = new GLTFLoader();
+        loader.load("/blue_box.glb", (gltf) => {
+            baseModel = processModel(gltf.scene);
+            buildWarehouseFromLayout(layout);
+        });
+    }
+
+    function parseLayoutCell(cell) {
+        if (!cell || typeof cell !== 'object') {
+            return {
+                cargo: cell === 'cargo',
+                cargoCount: cell === 'cargo' ? 1 : 0,
+                unload: cell === 'unload',
+                car: cell === 'car',
+                obstacle: cell === 'obstacle',
+            };
+        }
+
+        return {
+            cargo: Boolean(cell.cargo),
+            cargoCount: Math.max(0, Number(cell.cargoCount || 0)),
+            unload: Boolean(cell.unload),
+            car: Boolean(cell.car),
+            obstacle: Boolean(cell.obstacle),
+        };
+    }
+
+    async function buildWarehouseFromLayout(layout) {
+        if (!scene || !baseModel) return;
+
+        boxes.forEach((box) => {
+            box.traverse((child) => {
+                if (child.isMesh) {
+                    child.geometry?.dispose?.();
+                    if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose?.());
+                    else child.material?.dispose?.();
+                }
+            });
+            scene.remove(box);
+        });
+        boxes = [];
+
+        trackPieces.forEach((track) => {
+            track.traverse((child) => {
+                if (child.isMesh) {
+                    child.geometry?.dispose?.();
+                    if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose?.());
+                    else child.material?.dispose?.();
+                }
+            });
+            scene.remove(track);
+        });
+        trackPieces = [];
+
+        obstacleMeshes.forEach((mesh) => {
+            mesh.geometry?.dispose?.();
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose?.());
+            else mesh.material?.dispose?.();
+            scene.remove(mesh);
+        });
+        obstacleMeshes = [];
+
+        carManager?.dispose?.();
+        carManager = new CarManager(scene);
+
         const layoutUnloadCells = new Set();
         const layoutCargoCells = new Set();
         const layoutObstacleCells = [];
+        const obstacleCellKeys = new Set();
+        const cargoCountByCoord = new Map();
         customCarCoords = [];
 
         layout.cells.forEach((row, y) => {
-            row.forEach((cell, x) => {
+            row.forEach((rawCell, x) => {
+                const cell = parseLayoutCell(rawCell);
                 const key = `${x}-${y}`;
-                if (cell === 'unload') layoutUnloadCells.add(key);
-                if (cell === 'cargo') layoutCargoCells.add(key);
-                if (cell === 'obstacle') layoutObstacleCells.push({ x, y });
-                if (cell === 'car') customCarCoords.push({ x, y });
+                if (cell.unload) layoutUnloadCells.add(key);
+                if (cell.obstacle) {
+                    layoutObstacleCells.push({ x, y });
+                    obstacleCellKeys.add(key);
+                }
+                if (cell.cargo && !cell.obstacle) {
+                    layoutCargoCells.add(key);
+                    cargoCountByCoord.set(key, cell.cargoCount || 1);
+                }
+                if (cell.car) customCarCoords.push({ x, y });
             });
         });
 
         unloadAreaCellsConfig = layoutUnloadCells.size > 0 ? layoutUnloadCells : new Set(unloadAreaCells);
         allowedCargoCells = layoutCargoCells;
 
-        const loader = new GLTFLoader();
-        loader.load("/blue_box.glb", (gltf) => {
-            baseModel = processModel(gltf.scene);
-            const gridMetrics = createBoxGrid({
-                scene,
-                baseModel,
-                boxes,
-                unloadAreaCells: unloadAreaCellsConfig,
-                allowedCargoCells,
-                onComplete: (metrics) => {
-                    gridMetricsCache = metrics;
-                    currentModelSize = metrics.modelSize;
-                    adjustCamera(metrics);
-                    createTrackSystem({ scene, baseModel, trackPieces, gridMetrics: metrics, unloadBays: unloadBaysConfig });
-                    renderObstacleMarkers(layoutObstacleCells, metrics);
-                    player = createPlayer(scene, metrics.modelSize);
-                    if (carManager) {
-                        carManager.setCargoBoxes(boxes);
-                        carManager.createCars(metrics)
-                            .then(() => {
-                                carOptions.value = carManager.getCarOptions();
-                                destinationXOptions.value = Array.from({ length: metrics.width }, (_, i) => ({
-                                    id: `${i}`,
-                                    label: `X${i + 1}`,
-                                }));
-                                destinationYOptions.value = Array.from({ length: metrics.depth }, (_, i) => ({
-                                    id: `${i}`,
-                                    label: `Y${i + 1}`,
-                                }));
-                                placeCarsByCustomLayout();
-                                routeStatus.value = "車輛已載入，請選擇目的地";
-                            })
-                            .catch(() => {
-                                routeStatus.value = "車輛載入失敗";
-                            });
-                    }
-                    loadCargoLayout(metrics).catch((error) => {
-                        console.error("✗ 載入後端貨物配置失敗", error);
-                        saveBoxData(boxes, metrics.modelSize);
-                    });
+        createBoxGrid({
+            scene,
+            baseModel,
+            boxes,
+            unloadAreaCells: unloadAreaCellsConfig,
+            allowedCargoCells,
+            cargoCountByCoord,
+            obstacleCells: obstacleCellKeys,
+            onComplete: (metrics) => {
+                gridMetricsCache = metrics;
+                currentModelSize = metrics.modelSize;
+                adjustCamera(metrics);
+                createTrackSystem({ scene, baseModel, trackPieces, gridMetrics: metrics, unloadBays: unloadBaysConfig });
+                renderObstacleMarkers(layoutObstacleCells, metrics);
+                player = createPlayer(scene, metrics.modelSize);
+                if (carManager) {
+                    carManager.setCargoBoxes(boxes);
+                    carManager.createCars(metrics)
+                        .then(() => {
+                            carOptions.value = carManager.getCarOptions();
+                            destinationXOptions.value = Array.from({ length: metrics.width }, (_, i) => ({
+                                id: `${i}`,
+                                label: `X${i + 1}`,
+                            }));
+                            destinationYOptions.value = Array.from({ length: metrics.depth }, (_, i) => ({
+                                id: `${i}`,
+                                label: `Y${i + 1}`,
+                            }));
+                            placeCarsByCustomLayout();
+                            routeStatus.value = "車輛已載入，請選擇目的地";
+                        })
+                        .catch(() => {
+                            routeStatus.value = "車輛載入失敗";
+                        });
                 }
-            });
+                saveBoxData(boxes, metrics.modelSize);
+            }
         });
     }
 
@@ -133,8 +202,8 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         obstacleMeshes.forEach(mesh => scene.remove(mesh));
         obstacleMeshes = [];
         obstacles.forEach(({ x, y }) => {
-            const geometry = new THREE.BoxGeometry(metrics.boxWidth * 0.8, metrics.boxHeight * 0.8, metrics.boxDepth * 0.8);
-            const material = new THREE.MeshStandardMaterial({ color: 0x4b5563 });
+            const geometry = new THREE.BoxGeometry(metrics.boxWidth, metrics.boxHeight, metrics.boxDepth);
+            const material = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(
                 metrics.startX + x * (metrics.boxWidth + metrics.spacingX) - metrics.modelCenter.x,
@@ -156,7 +225,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             const targetCoord = { x: coord.x, z: coord.y };
             const point = carManager.getCargoAlignedPosition(targetCoord, heading);
             car.currentCoord = targetCoord;
-            car.path = [{ position: point.clone(), coord: targetCoord, direction: heading.clone() }];
+            car.path = [];
             car.pathIndex = 0;
             car.model.position.copy(point);
             carManager.occupiedGrids.set(`${targetCoord.x}-${targetCoord.z}`, car.id);
@@ -997,47 +1066,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     async function resetWarehouse() {
         if (!scene) return;
         const layout = await fetchWarehouseLayout();
-        const cellTypeMap = new Map();
-        const obstacleCells = [];
-        customCarCoords = [];
-        layout.cells.forEach((row, y) => {
-            row.forEach((cell, x) => {
-                cellTypeMap.set(`${x}-${y}`, cell);
-                if (cell === 'obstacle') obstacleCells.push({ x, y });
-                if (cell === 'car') customCarCoords.push({ x, y });
-            });
-        });
-
-        boxes.forEach((box) => {
-            const defaultPosition = box.userData?.defaultPosition;
-            const defaultGridCoord = box.userData?.defaultGridCoord;
-            if (!defaultPosition || !defaultGridCoord) return;
-
-            const cellType = cellTypeMap.get(`${defaultGridCoord.x}-${defaultGridCoord.z}`) || 'empty';
-            const shouldKeepCargo = cellType === 'cargo';
-
-            if (box.parent !== scene) {
-                scene.attach(box);
-            }
-            box.position.copy(defaultPosition);
-            box.rotation.set(0, 0, 0);
-            box.updateMatrixWorld(true);
-
-            box.userData.gridCoord = { ...defaultGridCoord };
-            box.userData.isPicked = !shouldKeepCargo;
-            box.userData.attachedToCarId = null;
-            box.userData.originalParent = scene;
-            box.visible = shouldKeepCargo;
-        });
-
-        if (gridMetricsCache) {
-            renderObstacleMarkers(obstacleCells, gridMetricsCache);
-        }
-        placeCarsByCustomLayout();
-
-        if (currentModelSize) {
-            saveBoxData(boxes, currentModelSize);
-        }
+        await buildWarehouseFromLayout(layout);
     }
 
     // ⭐ 切換避障模式

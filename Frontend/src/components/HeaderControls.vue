@@ -23,7 +23,7 @@
           開啟 3D 場景頁面
         </button>
         <button
-          @click="$emit('toggle-layout-editor')"
+          @click="$emit('open-layout-editor')"
           class="px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-all duration-300 font-medium"
         >
           🧩 客製化倉儲編輯器
@@ -59,5 +59,5 @@ const { isConnected, errorMessage } = defineProps({
   }
 })
 
-defineEmits(['open-three', 'toggle-connection', 'toggle-layout-editor'])
+defineEmits(['open-three', 'toggle-connection', 'open-layout-editor'])
 </script>

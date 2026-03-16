@@ -1,7 +1,7 @@
 export const warehouseGrid = {
-  width: 5,
-  depth: 10,
-  height: 5
+  width: 15,
+  depth: 15,
+  height: 8
 }
 
 export const unloadBays = [

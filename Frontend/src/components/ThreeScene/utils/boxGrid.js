@@ -1,9 +1,18 @@
 import * as THREE from "three";
 import { warehouseGrid } from "../../../utils/warehouseConfig";
 
-export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowedCargoCells = null, onComplete }) {
+export function createBoxGrid({
+    scene,
+    baseModel,
+    boxes,
+    unloadAreaCells,
+    allowedCargoCells = null,
+    cargoCountByCoord = null,
+    obstacleCells = null,
+    onComplete
+}) {
     const { width, depth, height } = warehouseGrid;
-    
+
     const finalBox = new THREE.Box3().setFromObject(baseModel);
     const modelSize = finalBox.getSize(new THREE.Vector3());
     const modelCenter = finalBox.getCenter(new THREE.Vector3());
@@ -39,12 +48,18 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowe
 
     for (let x = 0; x < width; x++) {
         for (let z = 0; z < depth; z++) {
-            const isUnloadCell = unloadAreaCells.has(`${x}-${z}`);
+            const key = `${x}-${z}`;
+            const isUnloadCell = unloadAreaCells.has(key);
+            const isObstacleCell = obstacleCells?.has?.(key) || false;
+            const targetCount = cargoCountByCoord?.has?.(key)
+                ? Math.max(0, Math.min(height, cargoCountByCoord.get(key)))
+                : height;
 
-            for (let y = 0; y < height; y++) {
-                if (isUnloadCell) continue;
-                if (allowedCargoCells && !allowedCargoCells.has(`${x}-${z}`)) continue;
+            if (isUnloadCell || isObstacleCell) continue;
+            if (allowedCargoCells && !allowedCargoCells.has(key)) continue;
+            if (targetCount <= 0) continue;
 
+            for (let y = 0; y < targetCount; y++) {
                 const targetCenterX = startX + x * (boxWidth + spacingX);
                 const targetCenterZ = startZ + z * (boxDepth + spacingZ);
                 const targetCenterY = startY + y * (boxHeight + spacingY);
@@ -55,7 +70,7 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowe
                     targetCenterY - modelCenter.y,
                     targetCenterZ - modelCenter.z
                 );
-                
+
                 const boxId = boxes.length + 1;
                 const defaultPosition = clonedModel.position.clone();
                 clonedModel.userData = {
@@ -73,7 +88,7 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowe
                     })(),
                     originalParent: scene,
                 };
-                
+
                 scene.add(clonedModel);
                 boxes.push(clonedModel);
             }
@@ -119,6 +134,6 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, allowe
     };
 
     if (onComplete) onComplete(gridMetrics);
-    
+
     return gridMetrics;
 }

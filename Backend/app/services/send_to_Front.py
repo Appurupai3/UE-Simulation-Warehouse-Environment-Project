@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -38,28 +38,37 @@ WAREHOUSE_LAYOUT_FILE = Path(__file__).parent.parent.parent / "data" / "warehous
 
 
 class WarehouseLayout(BaseModel):
-    version: int = 1
+    version: int = 2
     width: int = 15
     height: int = 15
-    cells: List[List[str]]
+    maxStack: int = 5
+    cells: List[List[Union[str, Dict[str, Any]]]]
     updatedAt: Optional[str] = None
 
 
 def _default_layout() -> Dict[str, Any]:
-    cells = [["empty" for _ in range(15)] for _ in range(15)]
+    def make_cell(**kwargs):
+        base = {"cargo": False, "cargoCount": 0, "unload": False, "car": False, "obstacle": False}
+        base.update(kwargs)
+        return base
+
+    cells = [[make_cell() for _ in range(15)] for _ in range(15)]
     for y in range(10):
         for x in range(5):
-            cells[y][x] = "cargo"
-    cells[0][0] = "unload"
-    cells[0][1] = "unload"
-    cells[0][3] = "unload"
-    cells[0][4] = "unload"
-    cells[1][0] = "car"
-    cells[1][4] = "car"
+            cells[y][x] = make_cell(cargo=True, cargoCount=5)
+
+    cells[0][0]["unload"] = True
+    cells[0][1]["unload"] = True
+    cells[0][3]["unload"] = True
+    cells[0][4]["unload"] = True
+    cells[1][0]["car"] = True
+    cells[1][4]["car"] = True
+
     return {
-        "version": 1,
+        "version": 2,
         "width": 15,
         "height": 15,
+        "maxStack": 5,
         "cells": cells,
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }

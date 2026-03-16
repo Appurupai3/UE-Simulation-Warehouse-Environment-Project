@@ -12,7 +12,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        three: resolve(__dirname, 'three.html')
+        three: resolve(__dirname, 'three.html'),
+        warehouseEditor: resolve(__dirname, 'warehouse-editor.html')
       }
     }
   }
