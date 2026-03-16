@@ -43,6 +43,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     });
     const carPriorities = ref({}); // ⭐ 車輛優先級
     const activeStackClearingCoordKeys = new Set();
+    const excludedStackPlacementCoordKeys = new Set();
 
     const unloadBaysConfig = unloadBays;
 
@@ -321,10 +322,24 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return activeStackClearingCoordKeys.has(`${coord.x}-${coord.z}`);
     }
 
+    function isOccupiedByOtherCar(coord, activeCarId) {
+        if (!coord || !carManager) return false;
+
+        const occupier = carManager.getOccupierCarIdAtCoord(coord, activeCarId, false);
+        return Boolean(occupier);
+    }
+
+    function isExcludedStackPlacementCoord(coord) {
+        if (!coord) return false;
+        return excludedStackPlacementCoordKeys.has(`${coord.x}-${coord.z}`);
+    }
+
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
         if (!coord) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
         if (isUnloadAreaCoord(coord)) return false;
+        if (isExcludedStackPlacementCoord(coord)) return false;
+        if (isOccupiedByOtherCar(coord, activeCarId)) return false;
         if (isActiveStackClearingCoord(coord)) return false;
         if (isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
@@ -436,6 +451,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         const clearingCoordKey = `${targetCoord.x}-${targetCoord.z}`;
         activeStackClearingCoordKeys.add(clearingCoordKey);
+        excludedStackPlacementCoordKeys.add(clearingCoordKey);
 
         try {
             let stack = getStackAtCoord(targetCoord);

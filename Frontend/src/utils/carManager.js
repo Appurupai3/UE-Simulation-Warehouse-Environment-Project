@@ -262,11 +262,23 @@ export class CarManager {
     shouldCurrentCarYield(myCar, occupierCar) {
         if (!myCar || !occupierCar) return false;
 
+        const myIsMoving = myCar.path.length > 0 && !myCar.isWaiting;
+        const theirIsMoving = occupierCar.path.length > 0 && !occupierCar.isWaiting;
+        if (myIsMoving !== theirIsMoving) {
+            return !myIsMoving;
+        }
+
         const myPriority = this.carPriorities.get(myCar.id) || 0;
         const theirPriority = this.carPriorities.get(occupierCar.id) || 0;
 
         if (myPriority !== theirPriority) {
             return myPriority < theirPriority;
+        }
+
+        const myIndex = Number(myCar.id?.split('-')?.[1]) || Number.MAX_SAFE_INTEGER;
+        const theirIndex = Number(occupierCar.id?.split('-')?.[1]) || Number.MAX_SAFE_INTEGER;
+        if (myIndex !== theirIndex) {
+            return myIndex > theirIndex;
         }
 
         return myCar.id > occupierCar.id;
