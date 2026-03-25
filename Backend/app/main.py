@@ -79,6 +79,8 @@ app.add_middleware(
 # 掛載 VUE 專用路由（支援以 `python app/main.py` 直接啟動）
 try:
     from app.services.send_to_Front import router as ue_router
+    from app.routers.benchmark import router as benchmark_router
+    from app.routers.algorithms import router as algorithms_router
 except ModuleNotFoundError:
     # 當以腳本形式在 `app` 目錄內執行時，將父目錄加入 sys.path
     import sys as _sys
@@ -88,7 +90,12 @@ except ModuleNotFoundError:
     if str(_parent) not in _sys.path:
         _sys.path.insert(0, str(_parent))
     from app.services.send_to_Front import router as ue_router
+    from app.routers.benchmark import router as benchmark_router
+    from app.routers.algorithms import router as algorithms_router
+
 app.include_router(ue_router)
+app.include_router(benchmark_router, prefix="/api")
+app.include_router(algorithms_router, prefix="/api")
 
 
 class CreateOrderRequest(BaseModel):

@@ -23,6 +23,13 @@
           開啟 3D 場景頁面
         </button>
         <button
+          @click="$emit('open-benchmark')"
+          class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all duration-300 font-medium flex items-center gap-2"
+        >
+          <span>📊</span>
+          演算法 Benchmark
+        </button>
+        <button
           @click="$emit('toggle-connection')"
           :class="isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'"
           class="px-4 py-2 text-white rounded-lg transition-all duration-300 font-medium"
@@ -53,5 +60,5 @@ const { isConnected, errorMessage } = defineProps({
   }
 })
 
-defineEmits(['open-three', 'toggle-connection'])
+defineEmits(['open-three', 'toggle-connection', 'open-benchmark'])
 </script>

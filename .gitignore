@@ -68,3 +68,4 @@ ADVANCED_FEATURES_GUIDE.md
 Backend/data/cargo_data.json
 Backend/data/app_data.json
 Backend/data/app_data.json
+*.kiro
