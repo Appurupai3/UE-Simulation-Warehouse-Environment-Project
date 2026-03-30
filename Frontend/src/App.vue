@@ -5,6 +5,7 @@
         :is-connected="isConnected"
         :error-message="errorMessage"
         @open-three="openThreeScene"
+        @open-benchmark="openBenchmark"
         @toggle-connection="toggleConnection"
       />
 
@@ -69,6 +70,10 @@ const {
 
 const openThreeScene = () => {
   window.open('/three.html', '_blank')
+}
+
+const openBenchmark = () => {
+  window.open('/benchmark.html', '_blank')
 }
 
 const submitOrder = () => {
