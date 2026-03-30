@@ -42,6 +42,8 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         idleCars: 0
     });
     const carPriorities = ref({}); // ⭐ 車輛優先級
+    const activeStackClearingCoordKeys = new Set();
+    const excludedStackPlacementCoordKeys = new Set();
 
     const unloadBaysConfig = unloadBays;
 
@@ -122,6 +124,40 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return result.success;
     }
 
+    async function executeCargoActionAtDestination(carId, destinationId, action, actionLabel) {
+        if (!carManager) return false;
+
+        if (destinationId) {
+            const moveResult = setCarDestination(carId, destinationId);
+            if (!moveResult) {
+                routeStatus.value = `無法前往鎖定目標位置 ${destinationId}`;
+                return false;
+            }
+
+            const moveReady = await waitForCarReady(carId);
+            if (!moveReady) {
+                routeStatus.value = `${actionLabel}失敗：車輛尚未準備完成`;
+                return false;
+            }
+
+            const stagnantReady = await waitForStableStagnant(carId, 500);
+            if (!stagnantReady) {
+                routeStatus.value = `${actionLabel}失敗：車輛未停妥於目標位置`;
+                return false;
+            }
+        }
+
+        return action(carId);
+    }
+
+    async function pickUpCargoAtDestination(carId, destinationId) {
+        return executeCargoActionAtDestination(carId, destinationId, pickUpCargo, "拿取");
+    }
+
+    async function dropCargoAtDestination(carId, destinationId) {
+        return executeCargoActionAtDestination(carId, destinationId, dropCargo, "放下");
+    }
+
     function getDefaultCarId() {
         return carOptions.value[0]?.id || "";
     }
@@ -167,24 +203,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         await pause(pickDropDelay);
         if (dropped) return true;
 
-        const fallbackCoords = getStagingCoordsByPriority(primaryCoord, carId, itemAssignments, deliveredItemIds);
-        for (const coord of fallbackCoords) {
-            const moved = setCarDestination(carId, `${coord.x}-${coord.z}`);
-            if (!moved) continue;
-
-            await waitForCarReady(carId);
-            await pause(pickDropDelay);
-
-            const retryDropReady = await waitForStableStagnant(carId, 500);
-            if (!retryDropReady) return false;
-
-            const retryDrop = dropCargo(carId);
-            await pause(pickDropDelay);
-            if (retryDrop) {
-                return true;
-            }
-        }
-
+        // 鎖定原目標位置：放下失敗時不再嘗試移到其他格子
         return false;
     }
 
@@ -259,61 +278,85 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         });
     }
 
+    function isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds) {
+        if (!itemAssignments || itemAssignments.size === 0) return false;
+
+        for (const [itemId, assignment] of itemAssignments.entries()) {
+            if (!assignment || assignment.carId === activeCarId) continue;
+            if (deliveredItemIds?.has(itemId)) continue;
+
+            const pickupCoord = assignment.pickupCoord;
+            if (!pickupCoord) continue;
+
+            if (pickupCoord.x === coord.x && pickupCoord.z === coord.z) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds) {
+        if (!itemAssignments || itemAssignments.size === 0) return false;
+
+        for (const [itemId, assignment] of itemAssignments.entries()) {
+            if (!assignment || assignment.carId === activeCarId) continue;
+            if (deliveredItemIds?.has(itemId)) continue;
+
+            const pickupCoord = assignment.pickupCoord;
+            if (pickupCoord && pickupCoord.x === coord.x && pickupCoord.z === coord.z) {
+                return true;
+            }
+
+            const shippingCoord = assignment.shippingTarget?.coord;
+            if (shippingCoord && shippingCoord.x === coord.x && shippingCoord.z === coord.z) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function isActiveStackClearingCoord(coord) {
+        if (!coord) return false;
+        return activeStackClearingCoordKeys.has(`${coord.x}-${coord.z}`);
+    }
+
+    function isOccupiedByOtherCar(coord, activeCarId) {
+        if (!coord || !carManager) return false;
+
+        const occupier = carManager.getOccupierCarIdAtCoord(coord, activeCarId, false);
+        return Boolean(occupier);
+    }
+
+    function isExcludedStackPlacementCoord(coord) {
+        if (!coord) return false;
+        return excludedStackPlacementCoordKeys.has(`${coord.x}-${coord.z}`);
+    }
+
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
         if (!coord) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
         if (isUnloadAreaCoord(coord)) return false;
+        if (isExcludedStackPlacementCoord(coord)) return false;
+        if (isOccupiedByOtherCar(coord, activeCarId)) return false;
+        if (isActiveStackClearingCoord(coord)) return false;
+        if (isOtherCarPickupCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
+        if (isOtherCarActiveWorkCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         if (isOtherCarPendingStackCoord(coord, activeCarId, itemAssignments, deliveredItemIds)) return false;
         return true;
     }
 
-    function getNearbyStagingCoords(centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
-        return getStagingCoordsByRadius(centerCoord, 1, activeCarId, itemAssignments, deliveredItemIds);
-    }
+    function refreshWarehouseDataForPlacement() {
+        if (!gridMetricsCache) return;
 
-    function getStagingCoordsByRadius(centerCoord, radius, activeCarId, itemAssignments, deliveredItemIds) {
-        if (!gridMetricsCache || radius < 1) return [];
+        boxes.forEach((box) => {
+            if (box.userData?.isPicked || box.userData?.attachedToCarId) return;
 
-        const { width, depth } = gridMetricsCache;
-        const candidates = [];
-
-        for (let z = centerCoord.z - radius; z <= centerCoord.z + radius; z++) {
-            for (let x = centerCoord.x - radius; x <= centerCoord.x + radius; x++) {
-                if (x < 0 || x >= width || z < 0 || z >= depth) continue;
-                const distance = Math.max(Math.abs(x - centerCoord.x), Math.abs(z - centerCoord.z));
-                if (distance !== radius) continue;
-
-                const coord = { x, z };
-                if (isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds)) {
-                    candidates.push(coord);
-                }
-            }
-        }
-
-        return candidates;
-    }
-
-    function getStagingCoordsWithinRadius(centerCoord, maxRadius, activeCarId, itemAssignments, deliveredItemIds) {
-        if (!gridMetricsCache || maxRadius < 1) return [];
-
-        const { width, depth } = gridMetricsCache;
-        const candidates = [];
-
-        for (let z = centerCoord.z - maxRadius; z <= centerCoord.z + maxRadius; z++) {
-            for (let x = centerCoord.x - maxRadius; x <= centerCoord.x + maxRadius; x++) {
-                if (x < 0 || x >= width || z < 0 || z >= depth) continue;
-
-                const distance = Math.max(Math.abs(x - centerCoord.x), Math.abs(z - centerCoord.z));
-                if (distance < 1 || distance > maxRadius) continue;
-
-                const coord = { x, z };
-                if (isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds)) {
-                    candidates.push(coord);
-                }
-            }
-        }
-
-        return candidates;
+            const worldPosition = new THREE.Vector3();
+            box.getWorldPosition(worldPosition);
+            box.userData.gridCoord = positionToGridCoord(worldPosition, gridMetricsCache);
+        });
     }
 
     function isStagingCoordNotFull(coord) {
@@ -322,27 +365,81 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return stackHeight < gridMetricsCache.height + 1;
     }
 
-    function sortStagingCoordsByHeight(coords = []) {
-        return [...coords].sort((a, b) => getStackAtCoord(a).length - getStackAtCoord(b).length);
-    }
+    function getManhattanRingCoords(centerCoord, distance) {
+        if (!gridMetricsCache || distance < 1) return [];
 
-    function getStagingCoordsByPriority(centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
-        const nearby8 = sortStagingCoordsByHeight(
-            getStagingCoordsByRadius(centerCoord, 1, activeCarId, itemAssignments, deliveredItemIds)
-                .filter(isStagingCoordNotFull)
-        );
-        if (nearby8.length > 0) {
-            return nearby8;
+        const { width, depth } = gridMetricsCache;
+        const candidates = [];
+        const seen = new Set();
+
+        if (distance === 1) {
+            const directNeighbors = [
+                { x: centerCoord.x, z: centerCoord.z - 1 },
+                { x: centerCoord.x + 1, z: centerCoord.z },
+                { x: centerCoord.x, z: centerCoord.z + 1 },
+                { x: centerCoord.x - 1, z: centerCoord.z },
+            ];
+
+            directNeighbors.forEach((coord) => {
+                if (coord.x < 0 || coord.x >= width || coord.z < 0 || coord.z >= depth) return;
+                const key = `${coord.x}-${coord.z}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                candidates.push(coord);
+            });
+            return candidates;
         }
 
-        return sortStagingCoordsByHeight(
-            getStagingCoordsWithinRadius(centerCoord, 2, activeCarId, itemAssignments, deliveredItemIds)
-                .filter(isStagingCoordNotFull)
-        );
+        for (let dz = -distance; dz <= distance; dz++) {
+            const dxAbs = distance - Math.abs(dz);
+            const points = [
+                { x: centerCoord.x - dxAbs, z: centerCoord.z + dz },
+                { x: centerCoord.x + dxAbs, z: centerCoord.z + dz },
+            ];
+
+            points.forEach((coord) => {
+                if (coord.x < 0 || coord.x >= width || coord.z < 0 || coord.z >= depth) return;
+                const key = `${coord.x}-${coord.z}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                candidates.push(coord);
+            });
+        }
+
+        return candidates;
     }
 
-    function getNextAvailableStagingCoord(centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
-        const stagingCoords = getStagingCoordsByPriority(centerCoord, activeCarId, itemAssignments, deliveredItemIds);
+    function getStagingCoordsByPriority(centerCoord, activeCarId, itemAssignments, deliveredItemIds, excludedCoordKeys = new Set()) {
+        if (!gridMetricsCache) return [];
+
+        refreshWarehouseDataForPlacement();
+
+        const maxDistance = Math.max(gridMetricsCache.width, gridMetricsCache.depth);
+        for (let distance = 1; distance <= maxDistance; distance++) {
+            const ringCoords = getManhattanRingCoords(centerCoord, distance)
+                .filter((coord) => {
+                    const key = `${coord.x}-${coord.z}`;
+                    if (excludedCoordKeys.has(key)) return false;
+                    if (!isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds)) return false;
+                    return isStagingCoordNotFull(coord);
+                });
+
+            if (ringCoords.length > 0) {
+                return ringCoords;
+            }
+        }
+
+        return [];
+    }
+
+    function getNextAvailableStagingCoord(centerCoord, activeCarId, itemAssignments, deliveredItemIds, excludedCoordKeys = new Set()) {
+        const stagingCoords = getStagingCoordsByPriority(
+            centerCoord,
+            activeCarId,
+            itemAssignments,
+            deliveredItemIds,
+            excludedCoordKeys,
+        );
         return stagingCoords[0] || null;
     }
 
@@ -352,16 +449,26 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             return { success: false, message: "目標貨物缺少座標" };
         }
 
-        let stack = getStackAtCoord(targetCoord);
-        let safetyCounter = 0;
-        const maxAttempts = stack.length + 2;
-        while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
+        const clearingCoordKey = `${targetCoord.x}-${targetCoord.z}`;
+        activeStackClearingCoordKeys.add(clearingCoordKey);
+        excludedStackPlacementCoordKeys.add(clearingCoordKey);
+
+        try {
+            let stack = getStackAtCoord(targetCoord);
+            let safetyCounter = 0;
+            const maxAttempts = stack.length + 2;
+            while (stack.length > 0 && stack[0].userData?.boxId !== targetBox.userData?.boxId) {
             if (safetyCounter++ > maxAttempts) {
                 return { success: false, message: "移除阻擋貨物失敗：超過最大嘗試次數" };
             }
 
             const blockingBox = stack[0];
             const blockingId = blockingBox.userData?.boxId;
+            const sourceCoord = blockingBox.userData?.gridCoord;
+            const sourceCoordKey = sourceCoord ? `${sourceCoord.x}-${sourceCoord.z}` : null;
+            if (sourceCoordKey) {
+                excludedStackPlacementCoordKeys.add(sourceCoordKey);
+            }
             let moved = false;
 
             if (orderItemIds?.has(blockingId)) {
@@ -383,12 +490,29 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     }
                 }
             } else {
-                const stagingCoord = getNextAvailableStagingCoord(targetCoord, carId, itemAssignments, deliveredItemIds);
-                const stagingCoords = [
-                    stagingCoord,
-                    ...getStagingCoordsByPriority(targetCoord, carId, itemAssignments, deliveredItemIds),
-                ].filter(Boolean);
-                moved = await moveCargoBoxToCoords(carId, blockingBox, stagingCoords, { itemAssignments, deliveredItemIds });
+                const maxRepositionSearchRetries = 3;
+                const excludedCoordKeys = new Set();
+                if (sourceCoordKey) {
+                    excludedCoordKeys.add(sourceCoordKey);
+                }
+
+                for (let retry = 0; retry < maxRepositionSearchRetries && !moved; retry++) {
+                    refreshWarehouseDataForPlacement();
+                    const stagingCoord = getNextAvailableStagingCoord(
+                        targetCoord,
+                        carId,
+                        itemAssignments,
+                        deliveredItemIds,
+                        excludedCoordKeys,
+                    );
+
+                    if (!stagingCoord) {
+                        break;
+                    }
+
+                    excludedCoordKeys.add(`${stagingCoord.x}-${stagingCoord.z}`);
+                    moved = await moveCargoBoxToCoords(carId, blockingBox, [stagingCoord], { itemAssignments, deliveredItemIds });
+                }
             }
 
             if (!moved) {
@@ -399,9 +523,12 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             }
 
             stack = getStackAtCoord(targetCoord);
-        }
+            }
 
-        return { success: true };
+            return { success: true };
+        } finally {
+            activeStackClearingCoordKeys.delete(clearingCoordKey);
+        }
     }
 
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
@@ -486,10 +613,16 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 const shippingTarget = shippingTargets[index % shippingTargets.length];
                 const carId = carIds[index % carIds.length] || getDefaultCarId();
                 (task.items || []).forEach((itemId) => {
+                    const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+                    const pickupCoord = box?.userData?.gridCoord
+                        ? { x: box.userData.gridCoord.x, z: box.userData.gridCoord.z }
+                        : null;
+
                     itemAssignments.set(itemId, {
                         orderId: task.order?.id,
                         carId,
                         shippingTarget,
+                        pickupCoord,
                     });
                 });
                 executionStatus.value = `分配 ${task.order?.id ?? ""} -> ${shippingTarget.label}`.trim();
@@ -880,7 +1013,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         carPriorities, // ⭐ 車輛優先級
         setCarDestination,
         pickUpCargo,
+        pickUpCargoAtDestination,
         dropCargo,
+        dropCargoAtDestination,
         executeOrders,
         resetWarehouse,
         switchCollisionMode, // ⭐ 切換避障模式

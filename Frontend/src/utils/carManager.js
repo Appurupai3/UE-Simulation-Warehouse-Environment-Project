@@ -39,6 +39,8 @@ export class CarManager {
         this.lastDeadlockCheck = 0;
         this.shortWaitTime = 1200; // 短暫等待時間（毫秒）
         this.maxWaitTime = 5000; // 最大等待時間（毫秒）
+        this.movingObstacleReplanInterval = 500; // 障礙預計會移動時，重新規劃頻率（毫秒）
+        this.maxMovingObstacleReplanAttempts = 20; // 障礙可移動情境的最大重規劃次數
 
         // 路徑規劃偏好（讓車輛盡量分流，降低正面衝突）
         this.nearbyCarPenalty = 2.5;
@@ -160,6 +162,8 @@ export class CarManager {
                             priority: config.priority || 0,
                             pathCost: 0, // 路徑成本
                             hasCargoTask: false, // 是否有貨物任務
+                            lastMovingObstacleReplanAt: 0,
+                            movingObstacleReplanAttempts: 0,
                         };
 
                         this.cars.push(carData);
@@ -258,11 +262,23 @@ export class CarManager {
     shouldCurrentCarYield(myCar, occupierCar) {
         if (!myCar || !occupierCar) return false;
 
+        const myIsMoving = myCar.path.length > 0 && !myCar.isWaiting;
+        const theirIsMoving = occupierCar.path.length > 0 && !occupierCar.isWaiting;
+        if (myIsMoving !== theirIsMoving) {
+            return !myIsMoving;
+        }
+
         const myPriority = this.carPriorities.get(myCar.id) || 0;
         const theirPriority = this.carPriorities.get(occupierCar.id) || 0;
 
         if (myPriority !== theirPriority) {
             return myPriority < theirPriority;
+        }
+
+        const myIndex = Number(myCar.id?.split('-')?.[1]) || Number.MAX_SAFE_INTEGER;
+        const theirIndex = Number(occupierCar.id?.split('-')?.[1]) || Number.MAX_SAFE_INTEGER;
+        if (myIndex !== theirIndex) {
+            return myIndex > theirIndex;
         }
 
         return myCar.id > occupierCar.id;
@@ -863,7 +879,17 @@ export class CarManager {
         }
 
         // 使用 A* 算法規劃路徑
-        const pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+        let pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+        let usedBlockedFallbackPath = false;
+
+        // 若被動態障礙（其他車/預約）暫時卡住，仍建立可行路徑，交由移動流程等待與重規劃
+        if (!pathCoords && this.enableCollisionAvoidance) {
+            this.enableCollisionAvoidance = false;
+            pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
+            this.enableCollisionAvoidance = true;
+            usedBlockedFallbackPath = Boolean(pathCoords);
+        }
+
         if (!pathCoords) {
             return { success: false, message: "無法找到路徑（可能被阻擋）" };
         }
@@ -888,6 +914,10 @@ export class CarManager {
 
         // 預約整條路徑
         this.reservePathGrids(car.id, pathCoords);
+
+        if (usedBlockedFallbackPath) {
+            return { success: true, message: `${car.name} 目標暫時受阻，已建立待通行路線（${pathCoords.length} 步）` };
+        }
 
         return { success: true, message: `${car.name} 路線已更新（${pathCoords.length} 步）` };
     }
@@ -1083,6 +1113,64 @@ export class CarManager {
         }
     }
 
+    isObstacleLikelyToMoveAway(occupierCar, targetCoord) {
+        if (!occupierCar || occupierCar.path.length === 0) return false;
+
+        const remainingPath = occupierCar.path.slice(occupierCar.pathIndex)
+            .map((point) => point?.coord)
+            .filter(Boolean);
+        if (remainingPath.length === 0) return false;
+
+        // 只要阻擋車後續還有至少一步，通常可視為會離開目前阻擋格
+        if (remainingPath.length > 1) return true;
+
+        const [nextCoord] = remainingPath;
+        if (!nextCoord) return false;
+
+        // 若阻擋車的最終目標與當前阻擋格不同，也視為會移開
+        if (occupierCar.targetCoord) {
+            const sameAsBlockingTarget =
+                occupierCar.targetCoord.x === targetCoord.x &&
+                occupierCar.targetCoord.z === targetCoord.z;
+            if (!sameAsBlockingTarget) return true;
+        }
+
+        return nextCoord.x !== targetCoord.x || nextCoord.z !== targetCoord.z;
+    }
+
+    tryReplanForMovingObstacle(carData, nowMs) {
+        if (!carData?.targetCoord) return false;
+        if ((carData.movingObstacleReplanAttempts || 0) >= this.maxMovingObstacleReplanAttempts) {
+            return false;
+        }
+
+        const lastAttempt = carData.lastMovingObstacleReplanAt || 0;
+        if (nowMs - lastAttempt < this.movingObstacleReplanInterval) {
+            return false;
+        }
+
+        carData.lastMovingObstacleReplanAt = nowMs;
+        carData.movingObstacleReplanAttempts = (carData.movingObstacleReplanAttempts || 0) + 1;
+        const detourPath = this.findGridPathAStar(carData.currentCoord, carData.targetCoord, carData.id);
+        if (!detourPath || detourPath.length <= 1) {
+            return false;
+        }
+
+        const carHeading = carData.heading?.clone() || this.unloadFacingDirection.clone();
+        carData.path = detourPath.map((coord) => ({
+            coord,
+            direction: carHeading.clone(),
+            position: this.getCargoAlignedPosition(coord, carHeading),
+        }));
+        carData.pathIndex = 0;
+        carData.isWaiting = false;
+        carData.waitTicks = 0;
+        carData.blockedBy = null;
+        carData.waitReason = null;
+        this.reservePathGrids(carData.id, detourPath);
+        return true;
+    }
+
     /**
      * ⭐ 統一車輛移動處理（所有移動問題集中）
      */
@@ -1092,6 +1180,8 @@ export class CarManager {
 
         if (path.length === 0) {
             carData.isWaiting = false;
+            carData.lastMovingObstacleReplanAt = 0;
+            carData.movingObstacleReplanAttempts = 0;
             carData.waitTicks = 0;
             carData.blockedBy = null;
             return;
@@ -1113,6 +1203,8 @@ export class CarManager {
                 carData.waitTicks = 0;
                 carData.blockedBy = null;
                 carData.waitReason = null;
+                carData.lastMovingObstacleReplanAt = 0;
+                carData.movingObstacleReplanAttempts = 0;
                 this.releasePathReservation(carData.id);
                 break;
             }
@@ -1162,6 +1254,7 @@ export class CarManager {
                     carData.isWaiting = true;
                     carData.waitStartTime = Date.now();
                     carData.waitTicks = 1;
+                    carData.movingObstacleReplanAttempts = 0;
                     carData.blockedBy = occupier;
                     carData.waitReason = `被 ${occupierCar?.name || occupier} 阻擋`;
                     console.log(`🚗 ${carData.name} (優先級${myPriority}) 等待 ${occupierCar?.name || occupier} (優先級${theirPriority}) 離開`);
@@ -1171,12 +1264,17 @@ export class CarManager {
 
                 if (mode === 'advanced') {
                     const waitTime = Date.now() - carData.waitStartTime;
-                    const occupierMovingSoon =
-                        occupierCar &&
-                        occupierCar.path.length > 0 &&
-                        occupierCar.pathIndex < occupierCar.path.length - 1;
+                    const occupierCanMoveAway = this.isObstacleLikelyToMoveAway(occupierCar, targetPoint.coord);
 
-                    if (waitTime <= this.shortWaitTime && occupierMovingSoon) {
+                    if (occupierCanMoveAway) {
+                        const replanned = this.tryReplanForMovingObstacle(carData, Date.now());
+                        if (replanned) {
+                            console.log(`↻ ${carData.name} 偵測阻擋車可能移開，嘗試快速重新規劃（${carData.movingObstacleReplanAttempts}/${this.maxMovingObstacleReplanAttempts}）`);
+                            continue;
+                        }
+                    }
+
+                    if (waitTime <= this.shortWaitTime && occupierCanMoveAway) {
                         break;
                     }
 
@@ -1195,6 +1293,7 @@ export class CarManager {
                             carData.waitTicks = 0;
                             carData.blockedBy = null;
                             carData.waitReason = null;
+                            carData.movingObstacleReplanAttempts = 0;
                             this.reservePathGrids(carData.id, detourPath);
                             continue;
                         }
@@ -1218,6 +1317,9 @@ export class CarManager {
                                 carData.isWaiting = false;
                                 carData.waitTicks = 0;
                                 carData.blockedBy = null;
+                                carData.waitReason = null;
+                                carData.lastMovingObstacleReplanAt = 0;
+                                carData.movingObstacleReplanAttempts = 0;
                                 this.reservePathGrids(carData.id, newPath);
                             } else {
                                 carData.waitStartTime = Date.now();
@@ -1233,6 +1335,8 @@ export class CarManager {
                 carData.waitTicks = 0;
                 carData.blockedBy = null;
                 carData.waitReason = null;
+                carData.lastMovingObstacleReplanAt = 0;
+                carData.movingObstacleReplanAttempts = 0;
                 console.log(`✅ ${carData.name} 繼續移動`);
             }
 
@@ -1266,6 +1370,8 @@ export class CarManager {
             carData.waitTicks = 0;
             carData.blockedBy = null;
             carData.waitReason = null;
+            carData.lastMovingObstacleReplanAt = 0;
+            carData.movingObstacleReplanAttempts = 0;
             this.releasePathReservation(carData.id);
             console.log(`🎯 ${carData.name} 已到達目的地`);
             if (mode === 'advanced' && carData.collaborativeTaskId) {
