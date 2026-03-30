@@ -68,7 +68,6 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 scene,
                 baseModel,
                 boxes,
-                unloadAreaCells,
                 onComplete: (metrics) => {
                     gridMetricsCache = metrics;
                     currentModelSize = metrics.modelSize;
@@ -335,8 +334,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     }
 
     function isValidStagingCoord(coord, centerCoord, activeCarId, itemAssignments, deliveredItemIds) {
-        if (!coord) return false;
+        if (!coord || !gridMetricsCache) return false;
         if (coord.x === centerCoord.x && coord.z === centerCoord.z) return false;
+        if (coord.z === gridMetricsCache.depth - 1) return false;
         if (isUnloadAreaCoord(coord)) return false;
         if (isExcludedStackPlacementCoord(coord)) return false;
         if (isOccupiedByOtherCar(coord, activeCarId)) return false;

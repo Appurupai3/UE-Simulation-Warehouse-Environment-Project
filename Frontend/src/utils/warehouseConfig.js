@@ -12,8 +12,7 @@ export const unloadBays = [
 export const unloadAreaCells = new Set(unloadBays.flatMap((bay) => bay.cells))
 
 export const getMaxBoxId = () => {
-  const totalCells = warehouseGrid.width * warehouseGrid.depth
-  const unloadCellCount = unloadAreaCells.size
-  const totalBoxes = totalCells * warehouseGrid.height
-  return totalBoxes - unloadCellCount * warehouseGrid.height
+  const accessibleDepth = Math.max(warehouseGrid.depth - 1, 0)
+  const totalCells = warehouseGrid.width * accessibleDepth
+  return totalCells * warehouseGrid.height
 }

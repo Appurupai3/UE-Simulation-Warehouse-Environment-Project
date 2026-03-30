@@ -1040,6 +1040,10 @@ export class CarManager {
             return { success: false, message: "僅能在停滯或停止狀態放置貨物" };
         }
 
+        if (car.currentCoord.z === this.gridMetrics.depth - 1) {
+            return { success: false, message: "最後一排禁止放置貨物" };
+        }
+
         const nextLevel = this.getNextShelfLevel(car.currentCoord);
         if (nextLevel >= this.gridMetrics.height + 1) {
             return { success: false, message: "貨物堆疊已達架子高度上限" };
