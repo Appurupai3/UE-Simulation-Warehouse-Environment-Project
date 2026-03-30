@@ -763,6 +763,10 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             box.updateMatrixWorld(true);
 
             const gridCoord = positionToGridCoord(position, metrics);
+            if (gridCoord.z === metrics.depth - 1) {
+                return;
+            }
+
             box.userData.gridCoord = gridCoord;
             box.userData.isPicked = false;
             box.userData.attachedToCarId = null;
