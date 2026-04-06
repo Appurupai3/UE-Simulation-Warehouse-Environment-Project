@@ -56,6 +56,11 @@
           <p><strong>路徑:</strong> {{ executionResult.path.join(' → ') }}</p>
           <p><strong>執行時間:</strong> {{ executionResult.execution_time_ms.toFixed(2) }} ms</p>
         </div>
+        <PathPreview2D
+          v-if="executionResult.path?.length > 0 && executionResult.positions?.length > 0"
+          :path="executionResult.path"
+          :positions="executionResult.positions"
+        />
       </div>
       <div v-else class="error">
         <h3>✗ 執行失敗</h3>
@@ -69,9 +74,13 @@
 <script>
 import { ref, onMounted } from 'vue'
 import { useCodeEditor } from '../../composables/useCodeEditor'
+import PathPreview2D from './PathPreview2D.vue'
 
 export default {
   name: 'CodeEditor',
+  components: {
+    PathPreview2D
+  },
   props: {
     testOrder: {
       type: Object,
