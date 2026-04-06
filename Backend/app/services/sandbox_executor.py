@@ -152,6 +152,7 @@ class SandboxExecutor(ISandboxExecutor):
                 success=True,
                 step_count=step_count,
                 path=path,
+                positions=positions,
                 execution_time_ms=execution_time
             )
             

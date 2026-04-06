@@ -90,6 +90,7 @@ class CodeExecutionResult(BaseModel):
     success: bool = Field(..., description="是否執行成功")
     step_count: Optional[int] = Field(None, description="步數（成功時）")
     path: Optional[List[int]] = Field(None, description="路徑（成功時）")
+    positions: Optional[List[Position3D]] = Field(None, description="位置序列（成功時）")
     execution_time_ms: Optional[float] = Field(None, description="執行時間（毫秒）")
     error_message: Optional[str] = Field(None, description="錯誤訊息（失敗時）")
     error_type: Optional[str] = Field(None, description="錯誤類型（失敗時）")
