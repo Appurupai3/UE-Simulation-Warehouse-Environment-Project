@@ -18,7 +18,14 @@
     </div>
     
     <div class="editor-wrapper">
+      <PathPreview2D
+        v-if="hasPreviewData"
+        class="inline-preview"
+        :path="executionResult.path"
+        :positions="executionResult.positions"
+      />
       <textarea
+        v-else
         v-model="code"
         class="code-textarea"
         placeholder="請選擇模板或開始編寫程式碼..."
@@ -56,11 +63,6 @@
           <p><strong>路徑:</strong> {{ executionResult.path.join(' → ') }}</p>
           <p><strong>執行時間:</strong> {{ executionResult.execution_time_ms.toFixed(2) }} ms</p>
         </div>
-        <PathPreview2D
-          v-if="executionResult.path?.length > 0 && executionResult.positions?.length > 0"
-          :path="executionResult.path"
-          :positions="executionResult.positions"
-        />
       </div>
       <div v-else class="error">
         <h3>✗ 執行失敗</h3>
@@ -72,7 +74,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useCodeEditor } from '../../composables/useCodeEditor'
 import PathPreview2D from './PathPreview2D.vue'
 
@@ -96,6 +98,13 @@ export default {
     const executing = ref(false)
     const validationResult = ref(null)
     const executionResult = ref(null)
+    const hasPreviewData = computed(() => {
+      return Boolean(
+        executionResult.value?.success &&
+        executionResult.value?.path?.length > 0 &&
+        executionResult.value?.positions?.length > 0
+      )
+    })
     
     const {
       loadTemplates,
@@ -161,6 +170,7 @@ export default {
       executing,
       validationResult,
       executionResult,
+      hasPreviewData,
       onTemplateChange,
       handleValidate,
       handleExecute,
@@ -241,6 +251,12 @@ export default {
 .editor-wrapper {
   flex: 1;
   overflow: hidden;
+}
+
+.inline-preview {
+  margin-top: 0;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .code-textarea {
