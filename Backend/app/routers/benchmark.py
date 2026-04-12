@@ -121,6 +121,17 @@ async def compare_algorithms(request: CompareBenchmarkRequest):
         raise HTTPException(status_code=500, detail=f"比較演算法失敗: {str(e)}")
 
 
+
+@router.get("/cargo-layout", response_model=dict)
+async def get_cargo_layout():
+    """提供前端 2D 模擬畫布使用的倉庫原始佈局資料"""
+    try:
+        cargo = benchmark_service.get_cargo_layout()
+        return {"cargo": cargo, "total": len(cargo)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"取得 cargo layout 失敗: {str(e)}")
+
+
 class OptimizeOrdersRequest(BaseModel):
     """批次優化請求"""
     algorithms: List[str] = Field(default=["greedy", "sequential", "reverse"], description="演算法列表")

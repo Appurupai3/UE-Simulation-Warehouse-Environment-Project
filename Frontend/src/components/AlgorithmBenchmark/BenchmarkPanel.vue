@@ -68,19 +68,22 @@
         </div>
 
         <div class="right-sim2d">
-          <h4>2D 模擬圖（{{ previewLabel }}）</h4>
-          <p class="sim-caption">下方以批次順序呈現模擬流程：每張卡片代表一次車輛任務。</p>
-          <div v-if="selectedPreview" class="flow-row">
-            <template v-for="(batch, index) in selectedPreview.batches" :key="`flow-${batch.batch_number}`">
-              <div class="flow-node">
-                <div class="node-title">批次 {{ batch.batch_number }}</div>
-                <div class="node-step">{{ batch.step_count }} 步</div>
-                <div class="node-items">{{ batch.items.join(' → ') }}</div>
-              </div>
-              <div v-if="index < selectedPreview.batches.length - 1" class="flow-arrow">→</div>
-            </template>
+          <h4>2D 倉庫模擬畫布（{{ previewLabel }}）</h4>
+          <p class="sim-caption">從倉庫初始佈局開始，逐步播放「去取貨 → 回出貨口」搬運過程。</p>
+
+          <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
+
+          <div class="sim-controls">
+            <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
+            <button class="btn btn-apply" @click="pauseAnimation" :disabled="!isAnimating">暫停</button>
+            <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
           </div>
-          <div v-else class="empty-preview">請先在左側點選「看 2D 模擬圖」。</div>
+
+          <p v-if="animationLegs.length" class="sim-status">
+            進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }}
+            ｜目前：{{ currentLegLabel }}
+          </p>
+          <p v-else class="empty-preview">請先在左側點選「看 2D 模擬圖」。</p>
         </div>
       </div>
     </div>
@@ -88,7 +91,7 @@
 </template>
 
 <script>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useBenchmark } from '../../composables/useBenchmark'
 
 export default {
@@ -98,6 +101,12 @@ export default {
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
+    const simCanvasRef = ref(null)
+    const cargoLayout = ref([])
+    const animationLegs = ref([])
+    const animationIndex = ref(0)
+    const isAnimating = ref(false)
+    let timer = null
 
     const availableAlgorithms = [
       { value: 'original', label: '原始順序（不整理）' },
@@ -107,6 +116,167 @@ export default {
 
     const { loading, error, optimizeAllOrders } = useBenchmark()
 
+    const getAlgorithmLabel = (name) => {
+      const algo = availableAlgorithms.find(a => a.value === name)
+      return algo ? algo.label : name
+    }
+
+    const previewLabel = computed(() => {
+      if (!selectedPreview.value) return '尚未選擇'
+      return getAlgorithmLabel(selectedPreview.value.algorithm_name)
+    })
+
+    const currentLegLabel = computed(() => {
+      const leg = animationLegs.value[animationIndex.value]
+      if (!leg) return '待機'
+      return `批次 ${leg.batchNumber}・${leg.type === 'pickup' ? '前往取貨' : '返回出貨口'}`
+    })
+
+    const fetchCargoLayout = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/benchmark/cargo-layout')
+        if (!response.ok) return
+        const data = await response.json()
+        cargoLayout.value = data?.cargo || []
+      } catch (err) {
+        console.warn('讀取 cargo layout 失敗', err)
+      }
+    }
+
+    const buildAnimationLegs = () => {
+      if (!selectedPreview.value?.batches) {
+        animationLegs.value = []
+        return
+      }
+
+      const dock = { x: 0, z: 0 }
+      const legs = []
+      selectedPreview.value.batches.forEach((batch) => {
+        const positions = batch.positions || []
+        positions.forEach((pos) => {
+          legs.push({ batchNumber: batch.batch_number, type: 'pickup', from: dock, to: { x: pos.x, z: pos.z } })
+          legs.push({ batchNumber: batch.batch_number, type: 'return', from: { x: pos.x, z: pos.z }, to: dock })
+        })
+      })
+      animationLegs.value = legs
+      animationIndex.value = 0
+    }
+
+    const normalizePoint = (x, z, bounds, width, height) => {
+      const padding = 30
+      const drawW = width - padding * 2
+      const drawH = height - padding * 2
+      const nx = bounds.maxX === bounds.minX ? 0.5 : (x - bounds.minX) / (bounds.maxX - bounds.minX)
+      const nz = bounds.maxZ === bounds.minZ ? 0.5 : (z - bounds.minZ) / (bounds.maxZ - bounds.minZ)
+      return { x: padding + nx * drawW, y: padding + (1 - nz) * drawH }
+    }
+
+    const drawCanvas = () => {
+      const canvas = simCanvasRef.value
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width
+      const height = canvas.height
+
+      const cargoPoints = cargoLayout.value
+        .map(item => item?.position)
+        .filter(Boolean)
+        .map(pos => ({ x: pos.x, z: pos.z }))
+
+      const routePoints = animationLegs.value.flatMap(leg => [leg.from, leg.to])
+      const allPoints = [...cargoPoints, ...routePoints, { x: 0, z: 0 }]
+      const xs = allPoints.map(p => p.x)
+      const zs = allPoints.map(p => p.z)
+      const bounds = {
+        minX: Math.min(...xs, -1),
+        maxX: Math.max(...xs, 1),
+        minZ: Math.min(...zs, -1),
+        maxZ: Math.max(...zs, 1)
+      }
+
+      ctx.clearRect(0, 0, width, height)
+      ctx.fillStyle = '#0b1020'
+      ctx.fillRect(0, 0, width, height)
+
+      // 倉庫初始貨位
+      cargoPoints.forEach((point) => {
+        const p = normalizePoint(point.x, point.z, bounds, width, height)
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.55)'
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
+        ctx.fill()
+      })
+
+      // 出貨口
+      const dock = normalizePoint(0, 0, bounds, width, height)
+      ctx.fillStyle = '#22d3ee'
+      ctx.beginPath()
+      ctx.arc(dock.x, dock.y, 6, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#e2e8f0'
+      ctx.font = '12px sans-serif'
+      ctx.fillText('出貨口', dock.x + 8, dock.y - 8)
+
+      // 已完成路徑
+      for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
+        const leg = animationLegs.value[i]
+        const from = normalizePoint(leg.from.x, leg.from.z, bounds, width, height)
+        const to = normalizePoint(leg.to.x, leg.to.z, bounds, width, height)
+        ctx.strokeStyle = leg.type === 'pickup' ? '#60a5fa' : '#34d399'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.stroke()
+      }
+
+      // 當前路徑
+      const current = animationLegs.value[animationIndex.value]
+      if (current) {
+        const from = normalizePoint(current.from.x, current.from.z, bounds, width, height)
+        const to = normalizePoint(current.to.x, current.to.z, bounds, width, height)
+        ctx.strokeStyle = '#f59e0b'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.stroke()
+
+        ctx.fillStyle = '#f8fafc'
+        ctx.beginPath()
+        ctx.arc(to.x, to.y, 4, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
+    const startAnimation = () => {
+      if (!animationLegs.value.length || isAnimating.value) return
+      isAnimating.value = true
+      timer = setInterval(() => {
+        if (animationIndex.value >= animationLegs.value.length - 1) {
+          clearInterval(timer)
+          timer = null
+          isAnimating.value = false
+          return
+        }
+        animationIndex.value += 1
+      }, 600)
+    }
+
+    const pauseAnimation = () => {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+      isAnimating.value = false
+    }
+
+    const resetAnimation = () => {
+      pauseAnimation()
+      animationIndex.value = 0
+      drawCanvas()
+    }
+
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
       if (result) {
@@ -115,19 +285,9 @@ export default {
       }
     }
 
-    const getAlgorithmLabel = (name) => {
-      const algo = availableAlgorithms.find(a => a.value === name)
-      return algo ? algo.label : name
-    }
-
     const selectPreview = (result) => {
       selectedPreview.value = result
     }
-
-    const previewLabel = computed(() => {
-      if (!selectedPreview.value) return '尚未選擇'
-      return getAlgorithmLabel(selectedPreview.value.algorithm_name)
-    })
 
     const writeOrdersFromAlgorithm = async (algorithmResult) => {
       await fetch('http://localhost:8000/orders', { method: 'DELETE' })
@@ -187,6 +347,23 @@ export default {
       }
     }
 
+    watch(selectedPreview, async () => {
+      pauseAnimation()
+      buildAnimationLegs()
+      await nextTick()
+      drawCanvas()
+    }, { deep: true })
+
+    watch(animationIndex, () => {
+      drawCanvas()
+    })
+
+    onBeforeUnmount(() => {
+      pauseAnimation()
+    })
+
+    fetchCargoLayout()
+
     return {
       selectedAlgorithms,
       availableAlgorithms,
@@ -194,11 +371,18 @@ export default {
       applyingBatches,
       loading,
       error,
-      selectedPreview,
       previewLabel,
+      animationLegs,
+      animationIndex,
+      isAnimating,
+      currentLegLabel,
+      simCanvasRef,
       handleOptimizeAllOrders,
       selectPreview,
       getAlgorithmLabel,
+      startAnimation,
+      pauseAnimation,
+      resetAnimation,
       applyBatchesToWarehouse,
       startSimulationFromBenchmark
     }
@@ -241,12 +425,9 @@ export default {
 .right-sim2d { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; min-height: 260px; }
 .right-sim2d h4 { margin: 0; }
 .sim-caption { margin: 6px 0 12px; font-size: 13px; color: #6b7280; }
-.flow-row { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-.flow-node { min-width: 180px; background: #f8fafc; border: 1px solid #dbeafe; border-radius: 8px; padding: 8px; }
-.node-title { font-weight: 700; color: #1d4ed8; }
-.node-step { font-size: 13px; color: #0f766e; margin-top: 4px; }
-.node-items { font-size: 12px; color: #4b5563; margin-top: 6px; line-height: 1.3; }
-.flow-arrow { font-size: 20px; color: #94a3b8; align-self: center; }
+.sim-canvas { width: 100%; border-radius: 8px; background: #0b1020; border: 1px solid #1e293b; margin-bottom: 10px; }
+.sim-controls { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.sim-status { margin: 0; font-size: 13px; color: #334155; }
 .empty-preview { color: #6b7280; font-size: 13px; }
 
 @media (max-width: 1100px) {

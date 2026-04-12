@@ -134,6 +134,11 @@ class BenchmarkService(IBenchmarkService):
         total_steps = route_steps + return_steps + stack_clear_steps
         return total_steps, positions, return_steps, stack_clear_steps
 
+
+    def get_cargo_layout(self) -> List[Dict]:
+        """提供前端 2D 模擬用的倉庫貨位資料"""
+        return self._load_cargo_data()
+
     async def run_benchmark(
         self, 
         order: BenchmarkOrder, 
