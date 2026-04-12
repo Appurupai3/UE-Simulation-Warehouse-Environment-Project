@@ -11,8 +11,17 @@
         :disabled="isExecuting || orders.length === 0"
         @click="$emit('start-execution')"
       >
-        {{ isExecuting ? '執行中...' : '開始執行' }}
+        {{ buttonLabel }}
       </button>
+    </div>
+
+    <div
+      v-if="benchmarkBridge"
+      class="rounded-lg bg-indigo-500/20 border border-indigo-300/30 px-3 py-2 text-sm text-indigo-100"
+    >
+      <p class="font-semibold">Benchmark 銜接模式</p>
+      <p>演算法：{{ benchmarkBridge.algorithm }} / 預估總步數：{{ benchmarkBridge.totalSteps }}</p>
+      <p>批次：{{ benchmarkBridge.totalBatches }}（系統會每次取 2 筆並連續執行）</p>
     </div>
 
     <div
@@ -72,6 +81,10 @@ const props = defineProps({
   executionFlows: {
     type: Array,
     default: () => []
+  },
+  benchmarkBridge: {
+    type: Object,
+    default: null
   }
 })
 
@@ -85,5 +98,10 @@ const buttonClass = computed(() => {
     return 'bg-indigo-500/60 text-white cursor-wait'
   }
   return 'bg-indigo-500 hover:bg-indigo-400 text-white'
+})
+
+const buttonLabel = computed(() => {
+  if (props.isExecuting) return '執行中...'
+  return props.benchmarkBridge ? '開始執行 Benchmark 批次' : '開始執行'
 })
 </script>

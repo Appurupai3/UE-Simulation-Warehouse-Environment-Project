@@ -1,9 +1,20 @@
 <template>
   <div class="benchmark-panel">
     <div class="panel-header">
-      <h2>Benchmark 測試</h2>
+      <h2>Benchmark 結果總覽</h2>
+      <p>不看程式碼也能直接比較演算法、預估步數、並一鍵銜接 3D 模擬。</p>
     </div>
-    
+
+    <div class="explain-card">
+      <h3>步數是怎麼算的？</h3>
+      <ul>
+        <li>起點固定在 <strong>(0, 0, 0)</strong>。</li>
+        <li>每個貨物點位使用 3D 距離：<code>√((dx² + dy² + dz²))</code>。</li>
+        <li>每段距離都做 <strong>無條件進位</strong>（ceil）後再加總。</li>
+      </ul>
+      <p class="explain-note">公式：總步數 = Σ ceil(上一點 → 下一點 的 3D 距離)</p>
+    </div>
+
     <div class="input-section">
       <div class="form-group">
         <label>選擇演算法</label>
@@ -18,72 +29,77 @@
           </label>
         </div>
       </div>
-      
+
       <button
         @click="handleOptimizeAllOrders"
         :disabled="loading || selectedAlgorithms.length === 0"
         class="btn btn-success"
       >
-        {{ loading ? '優化中...' : '執行批次優化' }}
+        {{ loading ? '計算中...' : '重新計算 Benchmark' }}
       </button>
     </div>
-    
+
     <div v-if="error" class="error-message">
       {{ error }}
     </div>
-    
+
     <div v-if="batchOptimizationResult" class="batch-optimization-section">
-      <h3>批次優化結果</h3>
-      
+      <h3>本次最佳結果</h3>
+
       <div class="best-result">
         <p><strong>最佳演算法:</strong> {{ batchOptimizationResult.best_algorithm }}</p>
         <p><strong>最少總步數:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
         <p><strong>來源訂單數:</strong> {{ batchOptimizationResult.source_orders.length }}</p>
       </div>
-      
+
       <div v-for="result in batchOptimizationResult.results" :key="result.algorithm_name" class="algorithm-batch-result">
         <div class="algorithm-header">
           <h4>{{ getAlgorithmLabel(result.algorithm_name) }}</h4>
-          <button
-            @click="applyBatchesToWarehouse(result)"
-            class="btn btn-apply"
-            :disabled="applyingBatches"
-          >
-            {{ applyingBatches ? '應用中...' : '應用到倉儲 →' }}
-          </button>
+          <div class="actions">
+            <button
+              @click="applyBatchesToWarehouse(result)"
+              class="btn btn-apply"
+              :disabled="applyingBatches"
+            >
+              {{ applyingBatches ? '寫入中...' : '寫入訂單' }}
+            </button>
+            <button
+              @click="startSimulationFromBenchmark(result)"
+              class="btn btn-primary"
+              :disabled="applyingBatches"
+            >
+              開始模擬（銜接 Benchmark）
+            </button>
+          </div>
         </div>
+
         <div class="batch-summary">
           <span>總批次數: {{ result.total_batches }}</span>
           <span>總項目數: {{ result.total_items }}</span>
           <span>總步數: {{ result.total_steps }}</span>
           <span>執行時間: {{ result.execution_time_ms.toFixed(2) }} ms</span>
         </div>
-        
-        <table class="batch-table">
-          <thead>
-            <tr>
-              <th>批次</th>
-              <th>項目數</th>
-              <th>步數</th>
-              <th>項目列表</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="batch in result.batches" :key="batch.batch_number">
-              <td>批次 {{ batch.batch_number }}</td>
-              <td>{{ batch.items.length }}</td>
-              <td>{{ batch.step_count }}</td>
-              <td class="path-cell">{{ batch.items.join(' → ') }}</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="sim2d">
+          <h5>2D 模擬圖（批次路線概念）</h5>
+          <div class="flow-row">
+            <template v-for="(batch, index) in result.batches" :key="`flow-${batch.batch_number}`">
+              <div class="flow-node">
+                <div class="node-title">批次 {{ batch.batch_number }}</div>
+                <div class="node-step">{{ batch.step_count }} 步</div>
+                <div class="node-items">{{ batch.items.join(' → ') }}</div>
+              </div>
+              <div v-if="index < result.batches.length - 1" class="flow-arrow">→</div>
+            </template>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useBenchmark } from '../../composables/useBenchmark'
 
 export default {
@@ -92,67 +108,72 @@ export default {
     const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
-    
+
     const availableAlgorithms = [
       { value: 'original', label: '原始順序（不整理）' },
       { value: 'greedy', label: '貪婪演算法' },
       { value: 'astar', label: 'A* 演算法' }
     ]
-    
+
     const {
       loading,
       error,
       optimizeAllOrders
     } = useBenchmark()
-    
+
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
-      
-      if (result) {
-        batchOptimizationResult.value = result
-      }
+      if (result) batchOptimizationResult.value = result
     }
-    
+
     const getAlgorithmLabel = (name) => {
       const algo = availableAlgorithms.find(a => a.value === name)
       return algo ? algo.label : name
     }
-    
+
+    const writeOrdersFromAlgorithm = async (algorithmResult) => {
+      await fetch('http://localhost:8000/orders', { method: 'DELETE' })
+
+      for (const batch of algorithmResult.batches) {
+        const orderContent = batch.items.join('-')
+        await fetch('http://localhost:8000/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: orderContent,
+            items: batch.items
+          })
+        })
+      }
+    }
+
+    const saveBenchmarkBridge = (algorithmResult) => {
+      const payload = {
+        source: 'benchmark',
+        generatedAt: new Date().toISOString(),
+        algorithm: algorithmResult.algorithm_name,
+        totalSteps: algorithmResult.total_steps,
+        totalBatches: algorithmResult.total_batches,
+        batches: algorithmResult.batches.map(batch => ({
+          batchNumber: batch.batch_number,
+          stepCount: batch.step_count,
+          items: batch.items
+        }))
+      }
+
+      localStorage.setItem('benchmark-execution-bridge', JSON.stringify(payload))
+    }
+
     const applyBatchesToWarehouse = async (algorithmResult) => {
       if (applyingBatches.value) return
-      
+
       applyingBatches.value = true
-      
       try {
-        // 1. 清除現有訂單
-        await fetch('http://localhost:8000/orders', {
-          method: 'DELETE'
-        })
-        
-        // 2. 為每個批次創建新訂單
-        for (const batch of algorithmResult.batches) {
-          const orderContent = batch.items.join('-')
-          await fetch('http://localhost:8000/orders', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              content: orderContent,
-              items: batch.items
-            })
-          })
-        }
-        
-        // 3. 顯示成功訊息
-        alert(`成功應用 ${getAlgorithmLabel(algorithmResult.algorithm_name)} 的批次優化結果！\n已創建 ${algorithmResult.total_batches} 個新訂單。\n請前往 Three.js 場景執行訂單。`)
-        
-        // 4. 可選：自動跳轉到 Three.js 場景
-        const shouldNavigate = confirm('是否立即前往 Three.js 場景？')
-        if (shouldNavigate) {
-          window.open('/three.html', '_blank')
-        }
-        
+        await writeOrdersFromAlgorithm(algorithmResult)
+        saveBenchmarkBridge(algorithmResult)
+        alert(`已寫入 ${algorithmResult.total_batches} 筆批次訂單，並建立 Benchmark 銜接資料。`)
       } catch (err) {
         console.error('應用批次失敗:', err)
         alert(`應用批次失敗: ${err.message}`)
@@ -160,7 +181,23 @@ export default {
         applyingBatches.value = false
       }
     }
-    
+
+    const startSimulationFromBenchmark = async (algorithmResult) => {
+      if (applyingBatches.value) return
+      applyingBatches.value = true
+
+      try {
+        await writeOrdersFromAlgorithm(algorithmResult)
+        saveBenchmarkBridge(algorithmResult)
+        window.open('/three.html', '_blank')
+      } catch (err) {
+        console.error('銜接模擬失敗:', err)
+        alert(`銜接模擬失敗: ${err.message}`)
+      } finally {
+        applyingBatches.value = false
+      }
+    }
+
     return {
       selectedAlgorithms,
       availableAlgorithms,
@@ -170,338 +207,48 @@ export default {
       error,
       handleOptimizeAllOrders,
       getAlgorithmLabel,
-      applyBatchesToWarehouse
+      applyBatchesToWarehouse,
+      startSimulationFromBenchmark
     }
   }
 }
 </script>
 
 <style scoped>
-.benchmark-panel {
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  height: 100%;
-  overflow-y: auto;
-}
-
-.panel-header h2 {
-  margin: 0 0 20px 0;
-  color: #333;
-  font-size: 24px;
-}
-
-.input-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.form-group {
-  margin-bottom: 16px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #555;
-}
-
-.order-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.order-input:focus {
-  outline: none;
-  border-color: #007acc;
-}
-
-.order-select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  background: white;
-  cursor: pointer;
-}
-
-.order-select:focus {
-  outline: none;
-  border-color: #007acc;
-}
-
-.algorithm-checkboxes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.checkbox-label input[type="checkbox"] {
-  cursor: pointer;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: #007acc;
-  color: white;
-  width: 100%;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #005a9e;
-}
-
-.btn-success {
-  background: #28a745;
-  color: white;
-  width: 100%;
-}
-
-.btn-success:hover:not(:disabled) {
-  background: #218838;
-}
-
-.btn-info {
-  background: #17a2b8;
-  color: white;
-  width: 100%;
-}
-
-.btn-info:hover:not(:disabled) {
-  background: #138496;
-}
-
-.btn-secondary {
-  background: #6c757d;
-  color: white;
-  margin-bottom: 12px;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #5a6268;
-}
-
-.error-message {
-  padding: 12px;
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-  border-radius: 4px;
-  margin-bottom: 20px;
-}
-
-.result-section,
-.history-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.result-section h3,
-.history-section h3 {
-  margin: 0 0 16px 0;
-  color: #333;
-  font-size: 18px;
-}
-
-.best-result {
-  background: #d4edda;
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 16px;
-  border: 1px solid #c3e6cb;
-}
-
-.best-result p {
-  margin: 4px 0;
-  color: #155724;
-}
-
-.results-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.results-table th,
-.results-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.results-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #495057;
-}
-
-.results-table .best-row {
-  background: #d4edda;
-  font-weight: 500;
-}
-
-.path-cell {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  color: #666;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.history-item {
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 4px;
-  border: 1px solid #dee2e6;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-.history-index {
-  color: #007acc;
-}
-
-.history-time {
-  color: #6c757d;
-  font-size: 12px;
-}
-
-.history-details {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
-  color: #495057;
-}
-
-.batch-optimization-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.batch-optimization-section h3 {
-  margin: 0 0 16px 0;
-  color: #333;
-  font-size: 18px;
-}
-
-.algorithm-batch-result {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 4px;
-}
-
-.algorithm-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.algorithm-batch-result h4 {
-  margin: 0;
-  color: #007acc;
-  font-size: 16px;
-}
-
-.btn-apply {
-  background: #ff6b35;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-apply:hover:not(:disabled) {
-  background: #e55a2b;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
-}
-
-.btn-apply:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.batch-summary {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 8px;
-  background: white;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.batch-summary span {
-  color: #495057;
-}
-
-.batch-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-}
-
-.batch-table th,
-.batch-table td {
-  padding: 10px;
-  text-align: left;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.batch-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #495057;
-}
+.benchmark-panel { padding: 20px; background: #f8f9fa; border-radius: 8px; height: 100%; overflow-y: auto; }
+.panel-header h2 { margin: 0; color: #333; font-size: 24px; }
+.panel-header p { margin: 8px 0 16px; color: #666; }
+.explain-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+.explain-card h3 { margin: 0 0 8px; font-size: 16px; }
+.explain-card ul { margin: 0; padding-left: 18px; color: #4b5563; }
+.explain-note { margin: 10px 0 0; color: #1f2937; font-size: 13px; }
+.input-section { background: white; padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: #555; }
+.algorithm-checkboxes { display: flex; flex-direction: column; gap: 8px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; }
+.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-success { background: #10b981; color: white; }
+.btn-success:hover:not(:disabled) { background: #059669; }
+.btn-primary { background: #3b82f6; color: white; }
+.btn-primary:hover:not(:disabled) { background: #2563eb; }
+.btn-apply { background: #8b5cf6; color: white; }
+.btn-apply:hover:not(:disabled) { background: #7c3aed; }
+.error-message { background: #fee2e2; color: #dc2626; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
+.batch-optimization-section h3 { margin-bottom: 12px; }
+.best-result { background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 6px; padding: 12px; margin-bottom: 16px; }
+.algorithm-batch-result { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.algorithm-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.algorithm-header h4 { margin: 0; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.batch-summary { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px 18px; color: #4b5563; font-size: 14px; }
+.sim2d { margin-top: 12px; border-top: 1px dashed #d1d5db; padding-top: 12px; }
+.sim2d h5 { margin: 0 0 10px; font-size: 14px; color: #374151; }
+.flow-row { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.flow-node { min-width: 190px; background: #f8fafc; border: 1px solid #dbeafe; border-radius: 8px; padding: 8px; }
+.node-title { font-weight: 700; color: #1d4ed8; }
+.node-step { font-size: 13px; color: #0f766e; margin-top: 4px; }
+.node-items { font-size: 12px; color: #4b5563; margin-top: 6px; line-height: 1.3; }
+.flow-arrow { font-size: 20px; color: #94a3b8; align-self: center; }
 </style>

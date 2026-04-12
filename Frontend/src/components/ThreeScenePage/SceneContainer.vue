@@ -7,6 +7,7 @@
         :is-executing="isExecuting"
         :execution-status="executionStatus"
         :execution-flows="executionFlows"
+        :benchmark-bridge="benchmarkBridge"
         @start-execution="handleStartExecution"
       />
       <ExecutionToolsPanel
@@ -18,7 +19,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ThreeScene from '../ThreeScene/ThreeScene.vue'
 import OrderExecutionPanel from './OrderExecutionPanel.vue'
 import ExecutionToolsPanel from './ExecutionToolsPanel.vue'
@@ -34,6 +35,7 @@ const emit = defineEmits(['order-complete'])
 
 const threeSceneRef = ref(null)
 const completedOrders = ref([])
+const benchmarkBridge = ref(null)
 
 const unwrapExposedRef = (maybeRef, fallback) => {
   if (maybeRef && typeof maybeRef === 'object' && 'value' in maybeRef) {
@@ -55,38 +57,67 @@ const parseOrderItems = (content) => {
     .filter(item => !Number.isNaN(item))
 }
 
+const pushCompletedOrders = (orderTasks, completedOrderIds = []) => {
+  if (!completedOrderIds.length) return
+
+  const completed = orderTasks
+    .filter(task => completedOrderIds.includes(task.order.id))
+    .map(task => ({
+      id: task.order.id,
+      content: task.order.content,
+      time: task.order.time
+    }))
+
+  completed.forEach((order) => {
+    if (!completedOrders.value.find(existing => existing.id === order.id)) {
+      completedOrders.value.unshift(order)
+    }
+  })
+
+  completedOrderIds.forEach((orderId) => {
+    emit('order-complete', orderId)
+  })
+}
+
+const executeInPairs = async (tasks) => {
+  for (let cursor = 0; cursor < tasks.length; cursor += 2) {
+    const chunk = tasks.slice(cursor, cursor + 2)
+    const result = await threeSceneRef.value.startOrderExecution(chunk)
+    pushCompletedOrders(chunk, result?.completedOrderIds || [])
+  }
+}
+
 const handleStartExecution = async () => {
   if (!threeSceneRef.value || isExecuting.value || props.orders.length === 0) return
 
-  const orderTasks = props.orders.slice(0, 2).map((order) => ({
+  const orderTasks = props.orders.map((order) => ({
     order,
     items: parseOrderItems(order.content)
   }))
-  const result = await threeSceneRef.value.startOrderExecution(orderTasks)
 
-  if (result?.completedOrderIds?.length) {
-    const completed = orderTasks
-      .filter(task => result.completedOrderIds.includes(task.order.id))
-      .map(task => ({
-        id: task.order.id,
-        content: task.order.content,
-        time: task.order.time
-      }))
-
-    completed.forEach((order) => {
-      if (!completedOrders.value.find(existing => existing.id === order.id)) {
-        completedOrders.value.unshift(order)
-      }
-    })
-
-    result.completedOrderIds.forEach((orderId) => {
-      emit('order-complete', orderId)
-    })
+  if (benchmarkBridge.value?.source === 'benchmark') {
+    await executeInPairs(orderTasks)
+    return
   }
+
+  const firstTwo = orderTasks.slice(0, 2)
+  const result = await threeSceneRef.value.startOrderExecution(firstTwo)
+  pushCompletedOrders(firstTwo, result?.completedOrderIds || [])
 }
 
 const handleResetWarehouse = () => {
   threeSceneRef.value?.resetWarehouse?.()
 }
+
+onMounted(() => {
+  try {
+    const raw = localStorage.getItem('benchmark-execution-bridge')
+    if (!raw) return
+    benchmarkBridge.value = JSON.parse(raw)
+  } catch (error) {
+    console.error('讀取 benchmark bridge 失敗', error)
+    benchmarkBridge.value = null
+  }
+})
 
 </script>
