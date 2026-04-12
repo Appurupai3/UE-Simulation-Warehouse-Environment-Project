@@ -46,7 +46,7 @@
 
       <div class="right-sim2d">
         <h4>2D 倉庫模擬（5 x 10 網格）</h4>
-        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物。</p>
+        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
@@ -255,6 +255,27 @@ export default {
       animationIndex.value = 0
     }
 
+    const parseCargoId = (rawId) => {
+      const text = String(rawId ?? '')
+      if (text.startsWith('case ')) return Number(text.replace('case ', ''))
+      return Number(text)
+    }
+
+    const getCargoPositionByLabel = (cargoLabel) => {
+      const targetId = Number(cargoLabel)
+      if (!Number.isFinite(targetId)) return null
+      const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
+      return hit?.position || null
+    }
+
+    const getBlockerCellsByCargoLabel = (cargoLabel, worldToGrid) => {
+      const targetPos = getCargoPositionByLabel(cargoLabel)
+      if (!targetPos) return []
+      return getBlockers(targetPos)
+        .slice(0, 4)
+        .map(pos => worldToGrid(pos.x, pos.z))
+    }
+
     const drawCanvas = () => {
       const canvas = simCanvasRef.value
       if (!canvas) return
@@ -265,6 +286,8 @@ export default {
       const cellW = (w - pad * 2) / GRID_COLS
       const cellH = (h - pad * 2) / GRID_ROWS
       const center = (cell) => ({ x: pad + cell.col * cellW + cellW / 2, y: pad + cell.row * cellH + cellH / 2 })
+      const worldToGrid = getGridMapper()
+      const current = animationLegs.value[animationIndex.value]
 
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#0f172a'
@@ -278,6 +301,28 @@ export default {
       ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(dockCenter.x, dockCenter.y, 7, 0, Math.PI * 2); ctx.fill()
       ctx.fillStyle = '#e2e8f0'; ctx.font = '12px sans-serif'; ctx.fillText('出貨口', dockCenter.x + 10, dockCenter.y - 8)
 
+      // 方形標出要取的貨物目標格與上層堆疊物
+      if (current?.cargoLabel) {
+        const targetPos = getCargoPositionByLabel(current.cargoLabel)
+        if (targetPos) {
+          const targetCell = worldToGrid(targetPos.x, targetPos.z)
+          const targetX = pad + targetCell.col * cellW
+          const targetY = pad + targetCell.row * cellH
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 3
+          ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
+        }
+
+        const blockerCells = getBlockerCellsByCargoLabel(current.cargoLabel, worldToGrid)
+        blockerCells.forEach((cell) => {
+          const x = pad + cell.col * cellW
+          const y = pad + cell.row * cellH
+          ctx.strokeStyle = '#a78bfa'
+          ctx.lineWidth = 2
+          ctx.strokeRect(x + 6, y + 6, cellW - 12, cellH - 12)
+        })
+      }
+
       for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
         const leg = animationLegs.value[i]
         const from = center(leg.from)
@@ -287,7 +332,6 @@ export default {
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
       }
 
-      const current = animationLegs.value[animationIndex.value]
       if (current) {
         const to = center(current.to)
         ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
