@@ -106,8 +106,13 @@ export default {
 
     const getGridMapper = () => {
       const points = cargoLayout.value.map(c => c?.position).filter(Boolean)
-      const xLevels = [...new Set(points.map(p => Number(p.x.toFixed(4))))].sort((a, b) => a - b)
-      const zLevels = [...new Set(points.map(p => Number(p.z.toFixed(4))))].sort((a, b) => b - a)
+      const xLevels = [...new Set(points.map(p => Number(p.x)).filter(Number.isFinite))].sort((a, b) => a - b)
+      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => b - a)
+
+      if (xLevels.length === 0 || zLevels.length === 0) {
+        return () => ({ ...DOCK_CELL })
+      }
+
       const nearest = (arr, value) => {
         let bestIdx = 0
         let bestDist = Number.POSITIVE_INFINITY
@@ -117,10 +122,18 @@ export default {
         })
         return bestIdx
       }
-      return (x, z) => ({
-        col: Math.max(0, Math.min(GRID_COLS - 1, nearest(xLevels, Number(x.toFixed(4))))),
-        row: Math.max(0, Math.min(GRID_ROWS - 1, nearest(zLevels, Number(z.toFixed(4)))))
-      })
+
+      return (x, z) => {
+        const safeX = Number(x)
+        const safeZ = Number(z)
+        if (!Number.isFinite(safeX) || !Number.isFinite(safeZ)) {
+          return { ...DOCK_CELL }
+        }
+        return {
+          col: Math.max(0, Math.min(GRID_COLS - 1, nearest(xLevels, safeX))),
+          row: Math.max(0, Math.min(GRID_ROWS - 1, nearest(zLevels, safeZ)))
+        }
+      }
     }
 
     const buildGridPath = (from, to) => {
@@ -132,10 +145,16 @@ export default {
       return path
     }
 
-    const getBlockers = (targetPos) => cargoLayout.value
-      .map(c => c?.position)
-      .filter(Boolean)
-      .filter(pos => Math.abs(pos.x - targetPos.x) < 0.0001 && Math.abs(pos.z - targetPos.z) < 0.0001 && pos.y > targetPos.y)
+    const getBlockers = (targetPos) => {
+      if (!targetPos || !Number.isFinite(Number(targetPos.x)) || !Number.isFinite(Number(targetPos.z)) || !Number.isFinite(Number(targetPos.y))) {
+        return []
+      }
+      return cargoLayout.value
+        .map(c => c?.position)
+        .filter(Boolean)
+        .filter(pos => Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.z)) && Number.isFinite(Number(pos.y)))
+        .filter(pos => Math.abs(pos.x - targetPos.x) < 0.0001 && Math.abs(pos.z - targetPos.z) < 0.0001 && pos.y > targetPos.y)
+    }
 
     const stagingCellFor = (cell) => {
       if (cell.col < GRID_COLS - 1) return { col: cell.col + 1, row: cell.row }
@@ -155,10 +174,13 @@ export default {
       selectedPreview.value.batches.forEach((batch) => {
         const positions = batch.positions || []
         positions.forEach((pos) => {
+          if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z)) || !Number.isFinite(Number(pos?.y))) {
+            return
+          }
           const target = worldToGrid(pos.x, pos.z)
 
-          // 堆疊物搬離演示
-          const blockers = getBlockers(pos)
+          // 堆疊物搬離演示（最多示範 2 層，避免畫面卡住）
+          const blockers = getBlockers(pos).slice(0, 2)
           blockers.forEach(() => {
             const staging = stagingCellFor(target)
             pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear')
@@ -168,10 +190,11 @@ export default {
           // 正常搬運
           pushPathLegs(legs, buildGridPath(DOCK_CELL, target), batch.batch_number, 'pickup')
           pushPathLegs(legs, buildGridPath(target, DOCK_CELL), batch.batch_number, 'return')
+          if (legs.length > 4000) return
         })
       })
 
-      animationLegs.value = legs
+      animationLegs.value = legs.slice(0, 4000)
       animationIndex.value = 0
     }
 
