@@ -179,22 +179,45 @@ export default {
       return { occupancy, maxPerCell: 4 }
     }
 
-    const findAvailableStagingCell = (targetCell, state) => {
-      for (let distance = 1; distance <= Math.max(GRID_COLS, GRID_ROWS); distance++) {
-        for (let dc = -distance; dc <= distance; dc++) {
-          const drAbs = distance - Math.abs(dc)
-          const candidates = [
-            { col: targetCell.col + dc, row: targetCell.row + drAbs },
-            { col: targetCell.col + dc, row: targetCell.row - drAbs }
-          ]
+    const getManhattanRingCells = (centerCell, distance) => {
+      const cells = []
+      const seen = new Set()
 
-          for (const cell of candidates) {
-            if (cell.col < 0 || cell.col >= GRID_COLS || cell.row < 0 || cell.row >= GRID_ROWS) continue
-            if (cell.col === targetCell.col && cell.row === targetCell.row) continue
-            if (cell.col === DOCK_CELL.col && cell.row === DOCK_CELL.row) continue
-            const used = state.occupancy.get(keyOf(cell)) || 0
-            if (used < state.maxPerCell) return cell
-          }
+      const addCell = (cell) => {
+        if (cell.col < 0 || cell.col >= GRID_COLS || cell.row < 0 || cell.row >= GRID_ROWS) return
+        const key = keyOf(cell)
+        if (seen.has(key)) return
+        seen.add(key)
+        cells.push(cell)
+      }
+
+      if (distance === 1) {
+        [
+          { col: centerCell.col, row: centerCell.row - 1 },
+          { col: centerCell.col + 1, row: centerCell.row },
+          { col: centerCell.col, row: centerCell.row + 1 },
+          { col: centerCell.col - 1, row: centerCell.row }
+        ].forEach(addCell)
+        return cells
+      }
+
+      for (let dr = -distance; dr <= distance; dr++) {
+        const dcAbs = distance - Math.abs(dr)
+        addCell({ col: centerCell.col - dcAbs, row: centerCell.row + dr })
+        addCell({ col: centerCell.col + dcAbs, row: centerCell.row + dr })
+      }
+
+      return cells
+    }
+
+    const findAvailableStagingCell = (targetCell, state) => {
+      const maxDistance = Math.max(GRID_COLS, GRID_ROWS)
+      for (let distance = 1; distance <= maxDistance; distance++) {
+        const ringCells = getManhattanRingCells(targetCell, distance)
+        for (const cell of ringCells) {
+          if (cell.col === DOCK_CELL.col && cell.row === DOCK_CELL.row) continue
+          const used = state.occupancy.get(keyOf(cell)) || 0
+          if (used < state.maxPerCell) return cell
         }
       }
       return null
@@ -242,6 +265,7 @@ export default {
             pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel)
             moveOccupancy(simulationState, target, staging)
             logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
+            pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
           })
 
           // 3) 最後回到出貨口

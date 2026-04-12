@@ -368,14 +368,17 @@ class BenchmarkService(IBenchmarkService):
         # 讀取所有訂單（從 main.py 的全局變量）
         try:
             from app.main import orders_db
-            source_orders = orders_db.copy()
+            all_orders = orders_db.copy()
         except Exception as e:
             raise ValueError(f"無法讀取訂單列表: {e}")
-        
-        if not source_orders:
+
+        if not all_orders:
             raise ValueError("沒有可用的訂單")
-        
-        # 合併所有訂單項目
+
+        # 只取最高順位前 2 張訂單（以 id 最大視為最新、優先）
+        source_orders = sorted(all_orders, key=lambda o: o.get('id', 0), reverse=True)[:2]
+
+        # 合併這兩張訂單項目
         all_items = []
         for order in source_orders:
             items = order.get('items', [])
