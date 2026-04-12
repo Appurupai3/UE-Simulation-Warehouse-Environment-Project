@@ -1,507 +1,479 @@
 <template>
   <div class="benchmark-panel">
     <div class="panel-header">
-      <h2>Benchmark 測試</h2>
+      <h2>Benchmark 結果總覽</h2>
     </div>
-    
+
     <div class="input-section">
       <div class="form-group">
         <label>選擇演算法</label>
         <div class="algorithm-checkboxes">
           <label v-for="algo in availableAlgorithms" :key="algo.value" class="checkbox-label">
-            <input
-              type="checkbox"
-              :value="algo.value"
-              v-model="selectedAlgorithms"
-            />
+            <input type="checkbox" :value="algo.value" v-model="selectedAlgorithms" />
             {{ algo.label }}
           </label>
         </div>
       </div>
-      
-      <button
-        @click="handleOptimizeAllOrders"
-        :disabled="loading || selectedAlgorithms.length === 0"
-        class="btn btn-success"
-      >
-        {{ loading ? '優化中...' : '執行批次優化' }}
-      </button>
+      <button @click="handleOptimizeAllOrders" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-success">{{ loading ? '計算中...' : '重新計算 Benchmark' }}</button>
     </div>
-    
-    <div v-if="error" class="error-message">
-      {{ error }}
-    </div>
-    
-    <div v-if="batchOptimizationResult" class="batch-optimization-section">
-      <h3>批次優化結果</h3>
-      
-      <div class="best-result">
-        <p><strong>最佳演算法:</strong> {{ batchOptimizationResult.best_algorithm }}</p>
-        <p><strong>最少總步數:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
-        <p><strong>來源訂單數:</strong> {{ batchOptimizationResult.source_orders.length }}</p>
+
+    <div v-if="error" class="error-message">{{ error }}</div>
+
+    <div v-if="batchOptimizationResult" class="result-split">
+      <div class="left-list">
+        <div class="best-result">
+          <p><strong>最佳演算法:</strong> {{ batchOptimizationResult.best_algorithm }}</p>
+          <p><strong>最少總步數:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
+        </div>
+
+        <div v-for="result in batchOptimizationResult.results" :key="result.algorithm_name" class="algorithm-batch-result">
+          <div class="algorithm-header">
+            <h4>{{ getAlgorithmLabel(result.algorithm_name) }}</h4>
+            <button class="btn btn-preview" @click="selectPreview(result)">看 2D 模擬圖</button>
+          </div>
+          <div class="batch-summary"><span>總步數: {{ result.total_steps }}</span><span>批次: {{ result.total_batches }}</span></div>
+          <div class="batch-sequences">
+            <div v-for="batch in result.batches" :key="`seq-${result.algorithm_name}-${batch.batch_number}`" class="seq-row">
+              <strong>批次 {{ batch.batch_number }}:</strong> {{ batch.items.join(' → ') }}
+            </div>
+          </div>
+          <div class="actions">
+            <button @click="applyBatchesToWarehouse(result)" class="btn btn-apply" :disabled="applyingBatches">寫入訂單</button>
+            <button @click="startSimulationFromBenchmark(result)" class="btn btn-primary" :disabled="applyingBatches">開始模擬</button>
+          </div>
+        </div>
       </div>
-      
-      <div v-for="result in batchOptimizationResult.results" :key="result.algorithm_name" class="algorithm-batch-result">
-        <div class="algorithm-header">
-          <h4>{{ getAlgorithmLabel(result.algorithm_name) }}</h4>
-          <button
-            @click="applyBatchesToWarehouse(result)"
-            class="btn btn-apply"
-            :disabled="applyingBatches"
-          >
-            {{ applyingBatches ? '應用中...' : '應用到倉儲 →' }}
-          </button>
+
+      <div class="right-sim2d">
+        <h4>2D 倉庫模擬（10 x 5 網格）</h4>
+        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
+        <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
+        <div class="sim-controls">
+          <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
+          <button class="btn btn-apply" @click="pauseAnimation" :disabled="!isAnimating">暫停</button>
+          <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
         </div>
-        <div class="batch-summary">
-          <span>總批次數: {{ result.total_batches }}</span>
-          <span>總項目數: {{ result.total_items }}</span>
-          <span>總步數: {{ result.total_steps }}</span>
-          <span>執行時間: {{ result.execution_time_ms.toFixed(2) }} ms</span>
+        <p v-if="animationLegs.length" class="sim-status">進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }} ｜ {{ currentLegLabel }}</p>
+        <div v-if="simulationEvents.length" class="state-log">
+          <div v-for="(log, idx) in simulationEvents.slice(0, 6)" :key="`log-${idx}`" class="log-row">{{ log }}</div>
         </div>
-        
-        <table class="batch-table">
-          <thead>
-            <tr>
-              <th>批次</th>
-              <th>項目數</th>
-              <th>步數</th>
-              <th>項目列表</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="batch in result.batches" :key="batch.batch_number">
-              <td>批次 {{ batch.batch_number }}</td>
-              <td>{{ batch.items.length }}</td>
-              <td>{{ batch.step_count }}</td>
-              <td class="path-cell">{{ batch.items.join(' → ') }}</td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useBenchmark } from '../../composables/useBenchmark'
 
 export default {
   name: 'BenchmarkPanel',
   setup() {
+    const GRID_ROWS = 10
+    const GRID_COLS = 5
+    const DOCK_CELLS = [
+      { col: 0, row: 0, label: 'X1Y1' },
+      { col: 3, row: 0, label: 'X4Y1' }
+    ]
+
     const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
-    
+    const selectedPreview = ref(null)
+    const cargoLayout = ref([])
+    const simCanvasRef = ref(null)
+
+    const animationLegs = ref([])
+    const animationIndex = ref(0)
+    const isAnimating = ref(false)
+    const simulationEvents = ref([])
+    const previewCargoCells = ref(new Map())
+    let timer = null
+
     const availableAlgorithms = [
       { value: 'original', label: '原始順序（不整理）' },
       { value: 'greedy', label: '貪婪演算法' },
       { value: 'astar', label: 'A* 演算法' }
     ]
-    
-    const {
-      loading,
-      error,
-      optimizeAllOrders
-    } = useBenchmark()
-    
+    const { loading, error, optimizeAllOrders } = useBenchmark()
+
+    const getAlgorithmLabel = (name) => availableAlgorithms.find(a => a.value === name)?.label || name
+
+    const currentLegLabel = computed(() => {
+      const leg = animationLegs.value[animationIndex.value]
+      if (!leg) return '待機'
+      if (leg.type === 'clear') return `批次 ${leg.batchNumber}・搬離堆疊物（貨物 ${leg.cargoLabel || '?'}）`
+      return `批次 ${leg.batchNumber}・${leg.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${leg.cargoLabel || '?'}）`
+    })
+
+    const fetchCargoLayout = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/benchmark/cargo-layout')
+        if (!response.ok) return
+        const data = await response.json()
+        cargoLayout.value = data?.cargo || []
+      } catch (e) {
+        console.warn('載入 cargo-layout 失敗', e)
+      }
+    }
+
+    const getGridMapper = () => {
+      const points = cargoLayout.value.map(c => c?.position).filter(Boolean)
+      const xLevels = [...new Set(points.map(p => Number(p.x)).filter(Number.isFinite))].sort((a, b) => a - b)
+      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => b - a)
+
+      if (xLevels.length === 0 || zLevels.length === 0) {
+        return () => ({ col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row })
+      }
+
+      const nearest = (arr, value) => {
+        let bestIdx = 0
+        let bestDist = Number.POSITIVE_INFINITY
+        arr.forEach((num, idx) => {
+          const d = Math.abs(num - value)
+          if (d < bestDist) { bestDist = d; bestIdx = idx }
+        })
+        return bestIdx
+      }
+
+      return (x, z) => {
+        const safeX = Number(x)
+        const safeZ = Number(z)
+        if (!Number.isFinite(safeX) || !Number.isFinite(safeZ)) {
+          return { col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row }
+        }
+        return {
+          col: Math.max(0, Math.min(GRID_COLS - 1, nearest(xLevels, safeX))),
+          row: Math.max(0, Math.min(GRID_ROWS - 1, nearest(zLevels, safeZ)))
+        }
+      }
+    }
+
+    const buildGridPath = (from, to) => {
+      const path = [{ ...from }]
+      let col = from.col
+      let row = from.row
+      while (col !== to.col) { col += col < to.col ? 1 : -1; path.push({ col, row }) }
+      while (row !== to.row) { row += row < to.row ? 1 : -1; path.push({ col, row }) }
+      return path
+    }
+
+    const getBlockers = (targetPos) => {
+      if (!targetPos || !Number.isFinite(Number(targetPos.x)) || !Number.isFinite(Number(targetPos.z)) || !Number.isFinite(Number(targetPos.y))) {
+        return []
+      }
+      return cargoLayout.value
+        .filter(item => item?.position)
+        .map((item) => ({ id: parseCargoId(item.id), pos: item.position }))
+        .filter(item => Number.isFinite(item.id))
+        .filter(item => Number.isFinite(Number(item.pos.x)) && Number.isFinite(Number(item.pos.z)) && Number.isFinite(Number(item.pos.y)))
+        .filter(item => Math.abs(item.pos.x - targetPos.x) < 0.0001 && Math.abs(item.pos.z - targetPos.z) < 0.0001 && item.pos.y > targetPos.y)
+        .sort((a, b) => b.pos.y - a.pos.y)
+    }
+
+    const keyOf = (cell) => `${cell.col}-${cell.row}`
+
+    const initSimulationState = (worldToGrid) => {
+      const occupancy = new Map()
+      const cargoCells = new Map()
+      cargoLayout.value.forEach((c) => {
+        const pos = c?.position
+        if (!pos) return
+        const cargoId = parseCargoId(c.id)
+        const cell = worldToGrid(pos.x, pos.z)
+        const key = keyOf(cell)
+        occupancy.set(key, (occupancy.get(key) || 0) + 1)
+        if (Number.isFinite(cargoId)) cargoCells.set(String(cargoId), { ...cell })
+      })
+      return { occupancy, cargoCells, maxPerCell: 6 }
+    }
+
+    const getManhattanRingCells = (centerCell, distance) => {
+      const cells = []
+      const seen = new Set()
+
+      const addCell = (cell) => {
+        if (cell.col < 0 || cell.col >= GRID_COLS || cell.row < 0 || cell.row >= GRID_ROWS) return
+        const key = keyOf(cell)
+        if (seen.has(key)) return
+        seen.add(key)
+        cells.push(cell)
+      }
+
+      if (distance === 1) {
+        [
+          { col: centerCell.col, row: centerCell.row - 1 },
+          { col: centerCell.col + 1, row: centerCell.row },
+          { col: centerCell.col, row: centerCell.row + 1 },
+          { col: centerCell.col - 1, row: centerCell.row }
+        ].forEach(addCell)
+        return cells
+      }
+
+      for (let dr = -distance; dr <= distance; dr++) {
+        const dcAbs = distance - Math.abs(dr)
+        addCell({ col: centerCell.col - dcAbs, row: centerCell.row + dr })
+        addCell({ col: centerCell.col + dcAbs, row: centerCell.row + dr })
+      }
+
+      return cells
+    }
+
+    const findAvailableStagingCell = (targetCell, state) => {
+      const maxDistance = Math.max(GRID_COLS, GRID_ROWS)
+      for (let distance = 1; distance <= maxDistance; distance++) {
+        const ringCells = getManhattanRingCells(targetCell, distance)
+        for (const cell of ringCells) {
+          if (DOCK_CELLS.some(d => d.col === cell.col && d.row === cell.row)) continue
+          if (cell.row === GRID_ROWS - 1) continue
+          const used = state.occupancy.get(keyOf(cell)) || 0
+          if (used < state.maxPerCell) return cell
+        }
+      }
+      return null
+    }
+
+    const moveOccupancy = (state, fromCell, toCell) => {
+      const fromKey = keyOf(fromCell)
+      const toKey = keyOf(toCell)
+      state.occupancy.set(fromKey, Math.max(0, (state.occupancy.get(fromKey) || 0) - 1))
+      state.occupancy.set(toKey, (state.occupancy.get(toKey) || 0) + 1)
+    }
+
+
+    const dockForBatch = (batchNumber) => {
+      const index = (Number(batchNumber) - 1) % DOCK_CELLS.length
+      return { col: DOCK_CELLS[index].col, row: DOCK_CELLS[index].row, label: DOCK_CELLS[index].label }
+    }
+
+    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null) => {
+      for (let i = 0; i < route.length - 1; i++) legs.push({ batchNumber, type, cargoLabel, carryId, from: route[i], to: route[i + 1] })
+    }
+
+    const buildAnimationLegs = () => {
+      if (!selectedPreview.value?.batches?.length) { animationLegs.value = []; return }
+
+      const worldToGrid = getGridMapper()
+      const simulationState = initSimulationState(worldToGrid)
+      const legs = []
+      const logs = []
+
+      selectedPreview.value.batches.forEach((batch) => {
+        const positions = batch.positions || []
+        positions.forEach((pos, posIndex) => {
+          if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z)) || !Number.isFinite(Number(pos?.y))) {
+            return
+          }
+          const cargoLabel = String(batch.items?.[posIndex] ?? '?')
+          const target = worldToGrid(pos.x, pos.z)
+          const dock = dockForBatch(batch.batch_number)
+
+          // 1) 先去取貨（不載貨）
+          pushPathLegs(legs, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel)
+
+          // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
+          const blockers = getBlockers(pos).slice(0, 4)
+          blockers.forEach((blocker, blockerIndex) => {
+            const staging = findAvailableStagingCell(target, simulationState)
+            if (!staging) {
+              logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 無可用暫存空間`) 
+              return
+            }
+            const blockerId = String(blocker.id)
+            pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId)
+            moveOccupancy(simulationState, target, staging)
+            simulationState.cargoCells.set(blockerId, { ...staging })
+            logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
+            pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
+          })
+
+          // 3) 最後回到對應出貨口（此段載貨）
+          pushPathLegs(legs, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel)
+          simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
+          if (legs.length > 4000) return
+        })
+      })
+
+      animationLegs.value = legs.slice(0, 4000)
+      simulationEvents.value = logs
+      previewCargoCells.value = new Map(simulationState.cargoCells)
+      animationIndex.value = 0
+    }
+
+    const parseCargoId = (rawId) => {
+      const text = String(rawId ?? '')
+      if (text.startsWith('case ')) return Number(text.replace('case ', ''))
+      return Number(text)
+    }
+
+    const getCargoPositionByLabel = (cargoLabel) => {
+      const targetId = Number(cargoLabel)
+      if (!Number.isFinite(targetId)) return null
+      const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
+      return hit?.position || null
+    }
+
+    const drawCanvas = () => {
+      const canvas = simCanvasRef.value
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const w = canvas.width
+      const h = canvas.height
+      const pad = 24
+      const cellW = (w - pad * 2) / GRID_COLS
+      const cellH = (h - pad * 2) / GRID_ROWS
+      const center = (cell) => ({ x: pad + cell.col * cellW + cellW / 2, y: pad + cell.row * cellH + cellH / 2 })
+      const worldToGrid = getGridMapper()
+      const current = animationLegs.value[animationIndex.value]
+
+      const getDisplayCargoLabel = () => {
+        if (!current?.cargoLabel) return null
+        const currentIsAtDock = DOCK_CELLS.some(d => d.col === current.to.col && d.row === current.to.row)
+        if (current.type === 'return' && currentIsAtDock) {
+          for (let i = animationIndex.value + 1; i < animationLegs.value.length; i++) {
+            const nextLeg = animationLegs.value[i]
+            if (nextLeg?.cargoLabel && nextLeg.type === 'pickup') {
+              return String(nextLeg.cargoLabel)
+            }
+          }
+        }
+        return String(current.cargoLabel)
+      }
+
+      ctx.clearRect(0, 0, w, h)
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(0, 0, w, h)
+
+      ctx.strokeStyle = 'rgba(148,163,184,0.35)'
+      for (let c = 0; c <= GRID_COLS; c++) { const x = pad + c * cellW; ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke() }
+      for (let r = 0; r <= GRID_ROWS; r++) { const y = pad + r * cellH; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke() }
+
+      DOCK_CELLS.forEach((dock) => {
+        const dockCenter = center(dock)
+        ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(dockCenter.x, dockCenter.y, 7, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '12px sans-serif'; ctx.fillText(dock.label, dockCenter.x + 8, dockCenter.y - 8)
+      })
+
+      // 方形標出要取貨與堆疊物，並讓物品隨搬運動態更新位置
+      const dynamicCells = new Map(previewCargoCells.value)
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
+        const leg = animationLegs.value[i]
+        if (leg?.carryId) {
+          dynamicCells.set(String(leg.carryId), { ...leg.to })
+        }
+      }
+
+      const displayCargoLabel = getDisplayCargoLabel()
+      if (displayCargoLabel) {
+        const targetPos = getCargoPositionByLabel(displayCargoLabel)
+        if (targetPos) {
+          const targetCell = worldToGrid(targetPos.x, targetPos.z)
+          const targetX = pad + targetCell.col * cellW
+          const targetY = pad + targetCell.row * cellH
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 3
+          ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
+        }
+
+        const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
+        blockerIds.forEach((id) => {
+          const cell = dynamicCells.get(id)
+          if (!cell) return
+          const x = pad + cell.col * cellW
+          const y = pad + cell.row * cellH
+          ctx.strokeStyle = '#a78bfa'
+          ctx.lineWidth = 2
+          ctx.strokeRect(x + 6, y + 6, cellW - 12, cellH - 12)
+        })
+      }
+
+      for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
+        const leg = animationLegs.value[i]
+        const from = center(leg.from)
+        const to = center(leg.to)
+        ctx.strokeStyle = leg.type === 'clear' ? '#c084fc' : (leg.type === 'pickup' ? '#60a5fa' : '#34d399')
+        ctx.lineWidth = 3
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+      }
+
+      if (current) {
+        const to = center(current.to)
+        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+
+        if (current.cargoLabel) {
+          ctx.fillStyle = '#fef08a'
+          ctx.font = '12px sans-serif'
+          ctx.fillText(`貨物 ${current.cargoLabel}`, to.x + 8, to.y - 10)
+        }
+      }
+    }
+
+    const startAnimation = () => {
+      if (!animationLegs.value.length || isAnimating.value) return
+      isAnimating.value = true
+      timer = setInterval(() => {
+        if (animationIndex.value >= animationLegs.value.length - 1) { clearInterval(timer); timer = null; isAnimating.value = false; return }
+        animationIndex.value += 1
+      }, 220)
+    }
+    const pauseAnimation = () => { if (timer) { clearInterval(timer); timer = null }; isAnimating.value = false }
+    const resetAnimation = () => { pauseAnimation(); animationIndex.value = 0; drawCanvas() }
+
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
-      
-      if (result) {
-        batchOptimizationResult.value = result
+      if (result) { batchOptimizationResult.value = result; selectedPreview.value = result.results?.[0] || null }
+    }
+    const selectPreview = (result) => { selectedPreview.value = result }
+
+    const writeOrdersFromAlgorithm = async (algorithmResult) => {
+      await fetch('http://localhost:8000/orders', { method: 'DELETE' })
+      for (const batch of algorithmResult.batches) {
+        await fetch('http://localhost:8000/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: batch.items.join('-'), items: batch.items }) })
       }
     }
-    
-    const getAlgorithmLabel = (name) => {
-      const algo = availableAlgorithms.find(a => a.value === name)
-      return algo ? algo.label : name
+    const saveBenchmarkBridge = (algorithmResult) => {
+      localStorage.setItem('benchmark-execution-bridge', JSON.stringify({
+        source: 'benchmark', generatedAt: new Date().toISOString(), algorithm: algorithmResult.algorithm_name,
+        totalSteps: algorithmResult.total_steps, totalBatches: algorithmResult.total_batches,
+        batches: algorithmResult.batches.map(batch => ({ batchNumber: batch.batch_number, stepCount: batch.step_count, items: batch.items }))
+      }))
     }
-    
-    const applyBatchesToWarehouse = async (algorithmResult) => {
-      if (applyingBatches.value) return
-      
-      applyingBatches.value = true
-      
-      try {
-        // 1. 清除現有訂單
-        await fetch('http://localhost:8000/orders', {
-          method: 'DELETE'
-        })
-        
-        // 2. 為每個批次創建新訂單
-        for (const batch of algorithmResult.batches) {
-          const orderContent = batch.items.join('-')
-          await fetch('http://localhost:8000/orders', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              content: orderContent,
-              items: batch.items
-            })
-          })
-        }
-        
-        // 3. 顯示成功訊息
-        alert(`成功應用 ${getAlgorithmLabel(algorithmResult.algorithm_name)} 的批次優化結果！\n已創建 ${algorithmResult.total_batches} 個新訂單。\n請前往 Three.js 場景執行訂單。`)
-        
-        // 4. 可選：自動跳轉到 Three.js 場景
-        const shouldNavigate = confirm('是否立即前往 Three.js 場景？')
-        if (shouldNavigate) {
-          window.open('/three.html', '_blank')
-        }
-        
-      } catch (err) {
-        console.error('應用批次失敗:', err)
-        alert(`應用批次失敗: ${err.message}`)
-      } finally {
-        applyingBatches.value = false
-      }
-    }
-    
+    const applyBatchesToWarehouse = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult) } finally { applyingBatches.value = false } }
+    const startSimulationFromBenchmark = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult); window.open('/three.html', '_blank') } finally { applyingBatches.value = false } }
+
+    watch(selectedPreview, async () => { pauseAnimation(); buildAnimationLegs(); await nextTick(); drawCanvas() }, { deep: true })
+    watch(animationIndex, drawCanvas)
+    onBeforeUnmount(pauseAnimation)
+    fetchCargoLayout()
+
     return {
-      selectedAlgorithms,
-      availableAlgorithms,
-      batchOptimizationResult,
-      applyingBatches,
-      loading,
-      error,
-      handleOptimizeAllOrders,
-      getAlgorithmLabel,
-      applyBatchesToWarehouse
+      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
+      animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
+      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation,
+      applyBatchesToWarehouse, startSimulationFromBenchmark
     }
   }
 }
 </script>
 
 <style scoped>
-.benchmark-panel {
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  height: 100%;
-  overflow-y: auto;
-}
-
-.panel-header h2 {
-  margin: 0 0 20px 0;
-  color: #333;
-  font-size: 24px;
-}
-
-.input-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.form-group {
-  margin-bottom: 16px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #555;
-}
-
-.order-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.order-input:focus {
-  outline: none;
-  border-color: #007acc;
-}
-
-.order-select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  background: white;
-  cursor: pointer;
-}
-
-.order-select:focus {
-  outline: none;
-  border-color: #007acc;
-}
-
-.algorithm-checkboxes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.checkbox-label input[type="checkbox"] {
-  cursor: pointer;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: #007acc;
-  color: white;
-  width: 100%;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #005a9e;
-}
-
-.btn-success {
-  background: #28a745;
-  color: white;
-  width: 100%;
-}
-
-.btn-success:hover:not(:disabled) {
-  background: #218838;
-}
-
-.btn-info {
-  background: #17a2b8;
-  color: white;
-  width: 100%;
-}
-
-.btn-info:hover:not(:disabled) {
-  background: #138496;
-}
-
-.btn-secondary {
-  background: #6c757d;
-  color: white;
-  margin-bottom: 12px;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #5a6268;
-}
-
-.error-message {
-  padding: 12px;
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-  border-radius: 4px;
-  margin-bottom: 20px;
-}
-
-.result-section,
-.history-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.result-section h3,
-.history-section h3 {
-  margin: 0 0 16px 0;
-  color: #333;
-  font-size: 18px;
-}
-
-.best-result {
-  background: #d4edda;
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 16px;
-  border: 1px solid #c3e6cb;
-}
-
-.best-result p {
-  margin: 4px 0;
-  color: #155724;
-}
-
-.results-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.results-table th,
-.results-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.results-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #495057;
-}
-
-.results-table .best-row {
-  background: #d4edda;
-  font-weight: 500;
-}
-
-.path-cell {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  color: #666;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.history-item {
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 4px;
-  border: 1px solid #dee2e6;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-.history-index {
-  color: #007acc;
-}
-
-.history-time {
-  color: #6c757d;
-  font-size: 12px;
-}
-
-.history-details {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
-  color: #495057;
-}
-
-.batch-optimization-section {
-  background: white;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.batch-optimization-section h3 {
-  margin: 0 0 16px 0;
-  color: #333;
-  font-size: 18px;
-}
-
-.algorithm-batch-result {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 4px;
-}
-
-.algorithm-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.algorithm-batch-result h4 {
-  margin: 0;
-  color: #007acc;
-  font-size: 16px;
-}
-
-.btn-apply {
-  background: #ff6b35;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-apply:hover:not(:disabled) {
-  background: #e55a2b;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
-}
-
-.btn-apply:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.batch-summary {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 8px;
-  background: white;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.batch-summary span {
-  color: #495057;
-}
-
-.batch-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-}
-
-.batch-table th,
-.batch-table td {
-  padding: 10px;
-  text-align: left;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.batch-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #495057;
-}
+.benchmark-panel { padding: 20px; background: #f8f9fa; border-radius: 8px; height: 100%; overflow-y: auto; }
+.input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.form-group { margin-bottom: 12px; }
+.algorithm-checkboxes { display: flex; gap: 10px; flex-wrap: wrap; }
+.result-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+.left-list { display: flex; flex-direction: column; gap: 10px; }
+.algorithm-header { display: flex; justify-content: space-between; align-items: center; }
+.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #475569; }
+.actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; }
+.btn { padding: 8px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; }
+.btn-success { background: #10b981; } .btn-preview { background: #0ea5e9; } .btn-apply { background: #8b5cf6; } .btn-primary { background: #3b82f6; }
+.error-message { color: #dc2626; margin-top: 8px; }
+.sim-caption, .sim-status { font-size: 13px; color: #64748b; }
+.sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
+.batch-sequences { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+.seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
+.state-log { margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
+.log-row { font-size: 12px; color: #475569; margin-bottom: 4px; }
+@media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>
