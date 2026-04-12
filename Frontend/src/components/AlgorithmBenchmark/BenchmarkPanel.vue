@@ -32,6 +32,11 @@
             <button class="btn btn-preview" @click="selectPreview(result)">看 2D 模擬圖</button>
           </div>
           <div class="batch-summary"><span>總步數: {{ result.total_steps }}</span><span>批次: {{ result.total_batches }}</span></div>
+          <div class="batch-sequences">
+            <div v-for="batch in result.batches" :key="`seq-${result.algorithm_name}-${batch.batch_number}`" class="seq-row">
+              <strong>批次 {{ batch.batch_number }}:</strong> {{ batch.items.join(' → ') }}
+            </div>
+          </div>
           <div class="actions">
             <button @click="applyBatchesToWarehouse(result)" class="btn btn-apply" :disabled="applyingBatches">寫入訂單</button>
             <button @click="startSimulationFromBenchmark(result)" class="btn btn-primary" :disabled="applyingBatches">開始模擬</button>
@@ -49,6 +54,9 @@
           <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
         </div>
         <p v-if="animationLegs.length" class="sim-status">進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }} ｜ {{ currentLegLabel }}</p>
+        <div v-if="simulationEvents.length" class="state-log">
+          <div v-for="(log, idx) in simulationEvents.slice(0, 6)" :key="`log-${idx}`" class="log-row">{{ log }}</div>
+        </div>
       </div>
     </div>
   </div>
@@ -75,6 +83,7 @@ export default {
     const animationLegs = ref([])
     const animationIndex = ref(0)
     const isAnimating = ref(false)
+    const simulationEvents = ref([])
     let timer = null
 
     const availableAlgorithms = [
@@ -156,9 +165,46 @@ export default {
         .filter(pos => Math.abs(pos.x - targetPos.x) < 0.0001 && Math.abs(pos.z - targetPos.z) < 0.0001 && pos.y > targetPos.y)
     }
 
-    const stagingCellFor = (cell) => {
-      if (cell.col < GRID_COLS - 1) return { col: cell.col + 1, row: cell.row }
-      return { col: Math.max(0, cell.col - 1), row: cell.row }
+    const keyOf = (cell) => `${cell.col}-${cell.row}`
+
+    const initSimulationState = (worldToGrid) => {
+      const occupancy = new Map()
+      cargoLayout.value.forEach((c) => {
+        const pos = c?.position
+        if (!pos) return
+        const cell = worldToGrid(pos.x, pos.z)
+        const key = keyOf(cell)
+        occupancy.set(key, (occupancy.get(key) || 0) + 1)
+      })
+      return { occupancy, maxPerCell: 4 }
+    }
+
+    const findAvailableStagingCell = (targetCell, state) => {
+      for (let distance = 1; distance <= Math.max(GRID_COLS, GRID_ROWS); distance++) {
+        for (let dc = -distance; dc <= distance; dc++) {
+          const drAbs = distance - Math.abs(dc)
+          const candidates = [
+            { col: targetCell.col + dc, row: targetCell.row + drAbs },
+            { col: targetCell.col + dc, row: targetCell.row - drAbs }
+          ]
+
+          for (const cell of candidates) {
+            if (cell.col < 0 || cell.col >= GRID_COLS || cell.row < 0 || cell.row >= GRID_ROWS) continue
+            if (cell.col === targetCell.col && cell.row === targetCell.row) continue
+            if (cell.col === DOCK_CELL.col && cell.row === DOCK_CELL.row) continue
+            const used = state.occupancy.get(keyOf(cell)) || 0
+            if (used < state.maxPerCell) return cell
+          }
+        }
+      }
+      return null
+    }
+
+    const moveOccupancy = (state, fromCell, toCell) => {
+      const fromKey = keyOf(fromCell)
+      const toKey = keyOf(toCell)
+      state.occupancy.set(fromKey, Math.max(0, (state.occupancy.get(fromKey) || 0) - 1))
+      state.occupancy.set(toKey, (state.occupancy.get(toKey) || 0) + 1)
     }
 
     const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '') => {
@@ -169,7 +215,9 @@ export default {
       if (!selectedPreview.value?.batches?.length) { animationLegs.value = []; return }
 
       const worldToGrid = getGridMapper()
+      const simulationState = initSimulationState(worldToGrid)
       const legs = []
+      const logs = []
 
       selectedPreview.value.batches.forEach((batch) => {
         const positions = batch.positions || []
@@ -184,11 +232,16 @@ export default {
           pushPathLegs(legs, buildGridPath(DOCK_CELL, target), batch.batch_number, 'pickup', cargoLabel)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物
-          const blockers = getBlockers(pos).slice(0, 2)
-          blockers.forEach(() => {
-            const staging = stagingCellFor(target)
+          const blockers = getBlockers(pos).slice(0, 4)
+          blockers.forEach((_, blockerIndex) => {
+            const staging = findAvailableStagingCell(target, simulationState)
+            if (!staging) {
+              logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 無可用暫存空間`) 
+              return
+            }
             pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel)
-            pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
+            moveOccupancy(simulationState, target, staging)
+            logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
           })
 
           // 3) 最後回到出貨口
@@ -198,6 +251,7 @@ export default {
       })
 
       animationLegs.value = legs.slice(0, 4000)
+      simulationEvents.value = logs
       animationIndex.value = 0
     }
 
@@ -286,7 +340,7 @@ export default {
 
     return {
       selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
-      animationLegs, animationIndex, isAnimating, currentLegLabel, simCanvasRef,
+      animationLegs, animationIndex, isAnimating, simulationEvents, currentLegLabel, simCanvasRef,
       handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
@@ -309,5 +363,9 @@ export default {
 .error-message { color: #dc2626; margin-top: 8px; }
 .sim-caption, .sim-status { font-size: 13px; color: #64748b; }
 .sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
+.batch-sequences { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+.seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
+.state-log { margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
+.log-row { font-size: 12px; color: #475569; margin-bottom: 4px; }
 @media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>
