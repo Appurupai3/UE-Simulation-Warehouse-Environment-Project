@@ -2,7 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
 from app.models.benchmark import (
@@ -79,6 +79,66 @@ class BenchmarkService(IBenchmarkService):
         if invalid_items:
             raise ValueError(f"無效的訂單項目: {invalid_items}")
     
+
+    def _build_cargo_indices(self, cargo_data: List[Dict]) -> Tuple[Dict[int, Position3D], Dict[str, List[Position3D]]]:
+        """建立 cargo 快速索引（id 與同 x/z 欄位）"""
+        id_to_position: Dict[int, Position3D] = {}
+        column_positions: Dict[str, List[Position3D]] = {}
+
+        for item in cargo_data:
+            cargo_id_str = str(item['id'])
+            cargo_id = int(cargo_id_str.replace('case ', '')) if cargo_id_str.startswith('case ') else int(cargo_id_str)
+            pos = item['position']
+            position = Position3D(x=pos['x'], y=pos['y'], z=pos['z'])
+            id_to_position[cargo_id] = position
+
+            column_key = f"{position.x:.3f}-{position.z:.3f}"
+            column_positions.setdefault(column_key, []).append(position)
+
+        return id_to_position, column_positions
+
+    def _count_operational_steps(
+        self,
+        path: List[int],
+        id_to_position: Dict[int, Position3D],
+        column_positions: Dict[str, List[Position3D]],
+        start_position: Position3D
+    ) -> Tuple[int, List[Position3D], int, int]:
+        """
+        計算更貼近實務的步數：
+        - 每件貨物都從出貨口出發，搬運後回到出貨口
+        - 搬離堆疊阻擋物的額外距離（每層阻擋預設 2 步）
+        """
+        positions: List[Position3D] = []
+        for item_id in path:
+            if item_id not in id_to_position:
+                raise ValueError(f"項目 {item_id} 不存在於 cargo_data 中")
+            positions.append(id_to_position[item_id])
+
+        # 每搬一個貨物都要回出貨口：
+        # 單件成本 = 出貨口 -> 貨位 + 貨位 -> 出貨口
+        route_steps = 0
+        return_steps = 0
+        for pos in positions:
+            outbound = int(self.step_counter.calculate_distance(start_position, pos) + 0.999999)
+            inbound = int(self.step_counter.calculate_distance(pos, start_position) + 0.999999)
+            route_steps += outbound
+            return_steps += inbound
+
+        stack_clear_steps = 0
+        for pos in positions:
+            column_key = f"{pos.x:.3f}-{pos.z:.3f}"
+            blockers = sum(1 for candidate in column_positions.get(column_key, []) if candidate.y > pos.y)
+            stack_clear_steps += blockers * 2
+
+        total_steps = route_steps + return_steps + stack_clear_steps
+        return total_steps, positions, return_steps, stack_clear_steps
+
+
+    def get_cargo_layout(self) -> List[Dict]:
+        """提供前端 2D 模擬用的倉庫貨位資料"""
+        return self._load_cargo_data()
+
     async def run_benchmark(
         self, 
         order: BenchmarkOrder, 
@@ -106,6 +166,7 @@ class BenchmarkService(IBenchmarkService):
         self._validate_order_items(order.items, cargo_data)
         
         # 初始化結果容器
+        id_to_position, column_positions = self._build_cargo_indices(cargo_data)
         results = []
         best_step_count = float('inf')
         best_algorithm = None
@@ -120,15 +181,13 @@ class BenchmarkService(IBenchmarkService):
             # 計算路徑
             path = algorithm.calculate_path(order.items, cargo_data)
             
-            # 獲取位置序列
-            positions = []
-            for item_id in path:
-                pos = self.step_counter.get_position(item_id, cargo_data)
-                positions.append(pos)
-            
-            # 計算步數
             start_position = Position3D(x=0, y=0, z=0)
-            step_count = self.step_counter.count_steps(positions, start_position)
+            step_count, positions, _, _ = self._count_operational_steps(
+                path,
+                id_to_position,
+                column_positions,
+                start_position
+            )
             
             end_time = time.perf_counter()
             execution_time = (end_time - start_time) * 1000  # 轉換為毫秒
@@ -332,6 +391,8 @@ class BenchmarkService(IBenchmarkService):
         cargo_data = self._load_cargo_data()
         self._validate_order_items(all_items, cargo_data)
         
+        id_to_position, column_positions = self._build_cargo_indices(cargo_data)
+
         # 對每個演算法執行批次優化
         results = []
         best_total_steps = float('inf')
@@ -355,15 +416,13 @@ class BenchmarkService(IBenchmarkService):
                     if not order_items:  # 跳過空訂單
                         continue
                     
-                    # 獲取位置序列
-                    positions = []
-                    for item_id in order_items:
-                        pos = self.step_counter.get_position(item_id, cargo_data)
-                        positions.append(pos)
-                    
-                    # 計算步數
                     start_position = Position3D(x=0, y=0, z=0)
-                    steps = self.step_counter.count_steps(positions, start_position)
+                    steps, positions, _, _ = self._count_operational_steps(
+                        order_items,
+                        id_to_position,
+                        column_positions,
+                        start_position
+                    )
                     
                     batch_info = BatchInfo(
                         batch_number=idx + 1,
@@ -395,22 +454,20 @@ class BenchmarkService(IBenchmarkService):
                 order1_items = optimized_path[:mid_point]
                 order2_items = optimized_path[mid_point:]
                 
-                # 計算訂單1的步數
-                order1_positions = []
-                for item_id in order1_items:
-                    pos = self.step_counter.get_position(item_id, cargo_data)
-                    order1_positions.append(pos)
-                
                 start_position = Position3D(x=0, y=0, z=0)
-                order1_steps = self.step_counter.count_steps(order1_positions, start_position)
-                
-                # 計算訂單2的步數
-                order2_positions = []
-                for item_id in order2_items:
-                    pos = self.step_counter.get_position(item_id, cargo_data)
-                    order2_positions.append(pos)
-                
-                order2_steps = self.step_counter.count_steps(order2_positions, start_position)
+                order1_steps, order1_positions, _, _ = self._count_operational_steps(
+                    order1_items,
+                    id_to_position,
+                    column_positions,
+                    start_position
+                )
+
+                order2_steps, order2_positions, _, _ = self._count_operational_steps(
+                    order2_items,
+                    id_to_position,
+                    column_positions,
+                    start_position
+                )
                 
                 # 總步數 = 兩台車並行，取最大值
                 total_steps = max(order1_steps, order2_steps)
