@@ -185,7 +185,7 @@ export default {
         occupancy.set(key, (occupancy.get(key) || 0) + 1)
         if (Number.isFinite(cargoId)) cargoCells.set(String(cargoId), { ...cell })
       })
-      return { occupancy, cargoCells, maxPerCell: 5 }
+      return { occupancy, cargoCells, maxPerCell: 6 }
     }
 
     const getManhattanRingCells = (centerCell, distance) => {
@@ -225,6 +225,7 @@ export default {
         const ringCells = getManhattanRingCells(targetCell, distance)
         for (const cell of ringCells) {
           if (DOCK_CELLS.some(d => d.col === cell.col && d.row === cell.row)) continue
+          if (cell.row === GRID_ROWS - 1) continue
           const used = state.occupancy.get(keyOf(cell)) || 0
           if (used < state.maxPerCell) return cell
         }
