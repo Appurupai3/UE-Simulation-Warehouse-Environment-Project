@@ -185,7 +185,7 @@ export default {
         occupancy.set(key, (occupancy.get(key) || 0) + 1)
         if (Number.isFinite(cargoId)) cargoCells.set(String(cargoId), { ...cell })
       })
-      return { occupancy, cargoCells, maxPerCell: 4 }
+      return { occupancy, cargoCells, maxPerCell: 5 }
     }
 
     const getManhattanRingCells = (centerCell, distance) => {
@@ -364,8 +364,9 @@ export default {
 
       const displayCargoLabel = getDisplayCargoLabel()
       if (displayCargoLabel) {
-        const targetCell = dynamicCells.get(displayCargoLabel)
-        if (targetCell) {
+        const targetPos = getCargoPositionByLabel(displayCargoLabel)
+        if (targetPos) {
+          const targetCell = worldToGrid(targetPos.x, targetPos.z)
           const targetX = pad + targetCell.col * cellW
           const targetY = pad + targetCell.row * cellH
           ctx.strokeStyle = '#fbbf24'
@@ -373,7 +374,6 @@ export default {
           ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
         }
 
-        const targetPos = getCargoPositionByLabel(displayCargoLabel)
         const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
         blockerIds.forEach((id) => {
           const cell = dynamicCells.get(id)
