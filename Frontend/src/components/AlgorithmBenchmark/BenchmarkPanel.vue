@@ -45,7 +45,7 @@
       </div>
 
       <div class="right-sim2d">
-        <h4>2D 倉庫模擬（5 x 10 網格）</h4>
+        <h4>2D 倉庫模擬（10 x 5 網格）</h4>
         <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
@@ -69,8 +69,8 @@ import { useBenchmark } from '../../composables/useBenchmark'
 export default {
   name: 'BenchmarkPanel',
   setup() {
-    const GRID_ROWS = 5
-    const GRID_COLS = 10
+    const GRID_ROWS = 10
+    const GRID_COLS = 5
     const DOCK_CELLS = [
       { col: 0, row: 0, label: 'X1Y1' },
       { col: 3, row: 0, label: 'X4Y1' }
@@ -325,6 +325,20 @@ export default {
       const worldToGrid = getGridMapper()
       const current = animationLegs.value[animationIndex.value]
 
+      const getDisplayCargoLabel = () => {
+        if (!current?.cargoLabel) return null
+        const currentIsAtDock = DOCK_CELLS.some(d => d.col === current.to.col && d.row === current.to.row)
+        if (current.type === 'return' && currentIsAtDock) {
+          for (let i = animationIndex.value + 1; i < animationLegs.value.length; i++) {
+            const nextLeg = animationLegs.value[i]
+            if (nextLeg?.cargoLabel && nextLeg.type === 'pickup') {
+              return String(nextLeg.cargoLabel)
+            }
+          }
+        }
+        return String(current.cargoLabel)
+      }
+
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#0f172a'
       ctx.fillRect(0, 0, w, h)
@@ -348,8 +362,9 @@ export default {
         }
       }
 
-      if (current?.cargoLabel) {
-        const targetCell = dynamicCells.get(String(current.cargoLabel))
+      const displayCargoLabel = getDisplayCargoLabel()
+      if (displayCargoLabel) {
+        const targetCell = dynamicCells.get(displayCargoLabel)
         if (targetCell) {
           const targetX = pad + targetCell.col * cellW
           const targetY = pad + targetCell.row * cellH
@@ -358,7 +373,7 @@ export default {
           ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
         }
 
-        const targetPos = getCargoPositionByLabel(current.cargoLabel)
+        const targetPos = getCargoPositionByLabel(displayCargoLabel)
         const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
         blockerIds.forEach((id) => {
           const cell = dynamicCells.get(id)
