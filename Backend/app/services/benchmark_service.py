@@ -106,8 +106,7 @@ class BenchmarkService(IBenchmarkService):
     ) -> Tuple[int, List[Position3D], int, int]:
         """
         計算更貼近實務的步數：
-        - 取貨路徑步數
-        - 回到出貨口（此處以起點代表）
+        - 每件貨物都從出貨口出發，搬運後回到出貨口
         - 搬離堆疊阻擋物的額外距離（每層阻擋預設 2 步）
         """
         positions: List[Position3D] = []
@@ -116,11 +115,15 @@ class BenchmarkService(IBenchmarkService):
                 raise ValueError(f"項目 {item_id} 不存在於 cargo_data 中")
             positions.append(id_to_position[item_id])
 
-        route_steps = self.step_counter.count_steps(positions, start_position)
-
+        # 每搬一個貨物都要回出貨口：
+        # 單件成本 = 出貨口 -> 貨位 + 貨位 -> 出貨口
+        route_steps = 0
         return_steps = 0
-        if positions:
-            return_steps = int(self.step_counter.calculate_distance(positions[-1], start_position) + 0.999999)
+        for pos in positions:
+            outbound = int(self.step_counter.calculate_distance(start_position, pos) + 0.999999)
+            inbound = int(self.step_counter.calculate_distance(pos, start_position) + 0.999999)
+            route_steps += outbound
+            return_steps += inbound
 
         stack_clear_steps = 0
         for pos in positions:
