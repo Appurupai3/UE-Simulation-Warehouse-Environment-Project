@@ -71,7 +71,10 @@ export default {
   setup() {
     const GRID_ROWS = 5
     const GRID_COLS = 10
-    const DOCK_CELL = { col: 0, row: 0 }
+    const DOCK_CELLS = [
+      { col: 0, row: 0, label: 'X1Y1' },
+      { col: 3, row: 0, label: 'X4Y1' }
+    ]
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
     const batchOptimizationResult = ref(null)
@@ -84,6 +87,7 @@ export default {
     const animationIndex = ref(0)
     const isAnimating = ref(false)
     const simulationEvents = ref([])
+    const previewCargoCells = ref(new Map())
     let timer = null
 
     const availableAlgorithms = [
@@ -119,7 +123,7 @@ export default {
       const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => b - a)
 
       if (xLevels.length === 0 || zLevels.length === 0) {
-        return () => ({ ...DOCK_CELL })
+        return () => ({ col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row })
       }
 
       const nearest = (arr, value) => {
@@ -136,7 +140,7 @@ export default {
         const safeX = Number(x)
         const safeZ = Number(z)
         if (!Number.isFinite(safeX) || !Number.isFinite(safeZ)) {
-          return { ...DOCK_CELL }
+          return { col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row }
         }
         return {
           col: Math.max(0, Math.min(GRID_COLS - 1, nearest(xLevels, safeX))),
@@ -159,24 +163,29 @@ export default {
         return []
       }
       return cargoLayout.value
-        .map(c => c?.position)
-        .filter(Boolean)
-        .filter(pos => Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.z)) && Number.isFinite(Number(pos.y)))
-        .filter(pos => Math.abs(pos.x - targetPos.x) < 0.0001 && Math.abs(pos.z - targetPos.z) < 0.0001 && pos.y > targetPos.y)
+        .filter(item => item?.position)
+        .map((item) => ({ id: parseCargoId(item.id), pos: item.position }))
+        .filter(item => Number.isFinite(item.id))
+        .filter(item => Number.isFinite(Number(item.pos.x)) && Number.isFinite(Number(item.pos.z)) && Number.isFinite(Number(item.pos.y)))
+        .filter(item => Math.abs(item.pos.x - targetPos.x) < 0.0001 && Math.abs(item.pos.z - targetPos.z) < 0.0001 && item.pos.y > targetPos.y)
+        .sort((a, b) => b.pos.y - a.pos.y)
     }
 
     const keyOf = (cell) => `${cell.col}-${cell.row}`
 
     const initSimulationState = (worldToGrid) => {
       const occupancy = new Map()
+      const cargoCells = new Map()
       cargoLayout.value.forEach((c) => {
         const pos = c?.position
         if (!pos) return
+        const cargoId = parseCargoId(c.id)
         const cell = worldToGrid(pos.x, pos.z)
         const key = keyOf(cell)
         occupancy.set(key, (occupancy.get(key) || 0) + 1)
+        if (Number.isFinite(cargoId)) cargoCells.set(String(cargoId), { ...cell })
       })
-      return { occupancy, maxPerCell: 4 }
+      return { occupancy, cargoCells, maxPerCell: 4 }
     }
 
     const getManhattanRingCells = (centerCell, distance) => {
@@ -215,7 +224,7 @@ export default {
       for (let distance = 1; distance <= maxDistance; distance++) {
         const ringCells = getManhattanRingCells(targetCell, distance)
         for (const cell of ringCells) {
-          if (cell.col === DOCK_CELL.col && cell.row === DOCK_CELL.row) continue
+          if (DOCK_CELLS.some(d => d.col === cell.col && d.row === cell.row)) continue
           const used = state.occupancy.get(keyOf(cell)) || 0
           if (used < state.maxPerCell) return cell
         }
@@ -230,8 +239,14 @@ export default {
       state.occupancy.set(toKey, (state.occupancy.get(toKey) || 0) + 1)
     }
 
-    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '') => {
-      for (let i = 0; i < route.length - 1; i++) legs.push({ batchNumber, type, cargoLabel, from: route[i], to: route[i + 1] })
+
+    const dockForBatch = (batchNumber) => {
+      const index = (Number(batchNumber) - 1) % DOCK_CELLS.length
+      return { col: DOCK_CELLS[index].col, row: DOCK_CELLS[index].row, label: DOCK_CELLS[index].label }
+    }
+
+    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null) => {
+      for (let i = 0; i < route.length - 1; i++) legs.push({ batchNumber, type, cargoLabel, carryId, from: route[i], to: route[i + 1] })
     }
 
     const buildAnimationLegs = () => {
@@ -250,32 +265,37 @@ export default {
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
+          const dock = dockForBatch(batch.batch_number)
 
-          // 1) 先去取貨
-          pushPathLegs(legs, buildGridPath(DOCK_CELL, target), batch.batch_number, 'pickup', cargoLabel)
+          // 1) 先去取貨（不載貨）
+          pushPathLegs(legs, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel)
 
-          // 2) 取貨後、回出貨口前，演示搬離堆疊物
+          // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
-          blockers.forEach((_, blockerIndex) => {
+          blockers.forEach((blocker, blockerIndex) => {
             const staging = findAvailableStagingCell(target, simulationState)
             if (!staging) {
               logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 無可用暫存空間`) 
               return
             }
-            pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel)
+            const blockerId = String(blocker.id)
+            pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId)
             moveOccupancy(simulationState, target, staging)
+            simulationState.cargoCells.set(blockerId, { ...staging })
             logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
             pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
           })
 
-          // 3) 最後回到出貨口
-          pushPathLegs(legs, buildGridPath(target, DOCK_CELL), batch.batch_number, 'return', cargoLabel)
+          // 3) 最後回到對應出貨口（此段載貨）
+          pushPathLegs(legs, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel)
+          simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
           if (legs.length > 4000) return
         })
       })
 
       animationLegs.value = legs.slice(0, 4000)
       simulationEvents.value = logs
+      previewCargoCells.value = new Map(simulationState.cargoCells)
       animationIndex.value = 0
     }
 
@@ -290,14 +310,6 @@ export default {
       if (!Number.isFinite(targetId)) return null
       const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
       return hit?.position || null
-    }
-
-    const getBlockerCellsByCargoLabel = (cargoLabel, worldToGrid) => {
-      const targetPos = getCargoPositionByLabel(cargoLabel)
-      if (!targetPos) return []
-      return getBlockers(targetPos)
-        .slice(0, 4)
-        .map(pos => worldToGrid(pos.x, pos.z))
     }
 
     const drawCanvas = () => {
@@ -321,15 +333,24 @@ export default {
       for (let c = 0; c <= GRID_COLS; c++) { const x = pad + c * cellW; ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke() }
       for (let r = 0; r <= GRID_ROWS; r++) { const y = pad + r * cellH; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke() }
 
-      const dockCenter = center(DOCK_CELL)
-      ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(dockCenter.x, dockCenter.y, 7, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = '#e2e8f0'; ctx.font = '12px sans-serif'; ctx.fillText('出貨口', dockCenter.x + 10, dockCenter.y - 8)
+      DOCK_CELLS.forEach((dock) => {
+        const dockCenter = center(dock)
+        ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(dockCenter.x, dockCenter.y, 7, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '12px sans-serif'; ctx.fillText(dock.label, dockCenter.x + 8, dockCenter.y - 8)
+      })
 
-      // 方形標出要取的貨物目標格與上層堆疊物
+      // 方形標出要取貨與堆疊物，並讓物品隨搬運動態更新位置
+      const dynamicCells = new Map(previewCargoCells.value)
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
+        const leg = animationLegs.value[i]
+        if (leg?.carryId) {
+          dynamicCells.set(String(leg.carryId), { ...leg.to })
+        }
+      }
+
       if (current?.cargoLabel) {
-        const targetPos = getCargoPositionByLabel(current.cargoLabel)
-        if (targetPos) {
-          const targetCell = worldToGrid(targetPos.x, targetPos.z)
+        const targetCell = dynamicCells.get(String(current.cargoLabel))
+        if (targetCell) {
           const targetX = pad + targetCell.col * cellW
           const targetY = pad + targetCell.row * cellH
           ctx.strokeStyle = '#fbbf24'
@@ -337,8 +358,11 @@ export default {
           ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
         }
 
-        const blockerCells = getBlockerCellsByCargoLabel(current.cargoLabel, worldToGrid)
-        blockerCells.forEach((cell) => {
+        const targetPos = getCargoPositionByLabel(current.cargoLabel)
+        const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
+        blockerIds.forEach((id) => {
+          const cell = dynamicCells.get(id)
+          if (!cell) return
           const x = pad + cell.col * cellW
           const y = pad + cell.row * cellH
           ctx.strokeStyle = '#a78bfa'
@@ -408,7 +432,7 @@ export default {
 
     return {
       selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
-      animationLegs, animationIndex, isAnimating, simulationEvents, currentLegLabel, simCanvasRef,
+      animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
       handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
