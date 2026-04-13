@@ -49,8 +49,8 @@
         <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
-          <button class="btn btn-apply" @click="stepBackward" :disabled="!animationLegs.length || animationIndex === 0">後退</button>
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
+          <button class="btn btn-apply" @click="stepBackward" :disabled="!animationLegs.length || animationIndex === 0">後退</button>
           <button class="btn btn-apply" @click="pauseAnimation" :disabled="!isAnimating">暫停</button>
           <button class="btn btn-preview" @click="stepForward" :disabled="!animationLegs.length || animationIndex >= animationLegs.length - 1">前進</button>
           <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
@@ -403,22 +403,6 @@ export default {
       const worldToGrid = getGridMapper()
       const currentFrame = animationLegs.value[animationIndex.value]
 
-      const getDisplayCargoLabel = () => {
-        const activeMove = currentFrame?.moves?.[0]
-        if (!activeMove?.cargoLabel) return null
-        const currentIsAtDock = DOCK_CELLS.some(d => d.col === activeMove.to.col && d.row === activeMove.to.row)
-        if (activeMove.type === 'return' && currentIsAtDock) {
-          for (let i = animationIndex.value + 1; i < animationLegs.value.length; i++) {
-            const nextFrame = animationLegs.value[i]
-            const nextPickup = nextFrame?.moves?.find((move) => move.type === 'pickup' && move.cargoLabel)
-            if (nextPickup) {
-              return String(nextPickup.cargoLabel)
-            }
-          }
-        }
-        return String(activeMove.cargoLabel)
-      }
-
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#0f172a'
       ctx.fillRect(0, 0, w, h)
@@ -442,19 +426,22 @@ export default {
         })
       }
 
-      const displayCargoLabel = getDisplayCargoLabel()
-      if (displayCargoLabel) {
-        const targetPos = getCargoPositionByLabel(displayCargoLabel)
-        if (targetPos) {
-          const targetCell = worldToGrid(targetPos.x, targetPos.z)
-          const targetX = pad + targetCell.col * cellW
-          const targetY = pad + targetCell.row * cellH
-          ctx.strokeStyle = '#fbbf24'
-          ctx.lineWidth = 3
-          ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
-        }
+      const activeCargoMoves = (currentFrame?.moves || []).filter((move) => move.type !== 'clear' && move.cargoLabel)
+      const blockerTargets = []
+      activeCargoMoves.forEach((move) => {
+        const targetPos = getCargoPositionByLabel(move.cargoLabel)
+        if (!targetPos) return
+        blockerTargets.push(targetPos)
+        const highlightedCell = dynamicCells.get(String(move.cargoLabel)) || worldToGrid(targetPos.x, targetPos.z)
+        const targetX = pad + highlightedCell.col * cellW
+        const targetY = pad + highlightedCell.row * cellH
+        ctx.strokeStyle = move.carColor || '#fbbf24'
+        ctx.lineWidth = 3
+        ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
+      })
 
-        const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
+      blockerTargets.forEach((targetPos) => {
+        const blockerIds = getBlockers(targetPos).map(b => String(b.id)).slice(0, 4)
         blockerIds.forEach((id) => {
           const cell = dynamicCells.get(id)
           if (!cell) return
@@ -464,7 +451,7 @@ export default {
           ctx.lineWidth = 2
           ctx.strokeRect(x + 6, y + 6, cellW - 12, cellH - 12)
         })
-      }
+      })
 
       for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
         const frame = animationLegs.value[i]
