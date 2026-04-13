@@ -49,8 +49,10 @@
         <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
+          <button class="btn btn-apply" @click="stepBackward" :disabled="!animationLegs.length || animationIndex === 0">後退</button>
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
           <button class="btn btn-apply" @click="pauseAnimation" :disabled="!isAnimating">暫停</button>
+          <button class="btn btn-preview" @click="stepForward" :disabled="!animationLegs.length || animationIndex >= animationLegs.length - 1">前進</button>
           <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
         </div>
         <p v-if="animationLegs.length" class="sim-status">進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }} ｜ {{ currentLegLabel }}</p>
@@ -74,6 +76,10 @@ export default {
     const DOCK_CELLS = [
       { col: 0, row: 0, label: 'X1Y1' },
       { col: 3, row: 0, label: 'X4Y1' }
+    ]
+    const CAR_CONFIGS = [
+      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0 },
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1 }
     ]
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
@@ -100,10 +106,14 @@ export default {
     const getAlgorithmLabel = (name) => availableAlgorithms.find(a => a.value === name)?.label || name
 
     const currentLegLabel = computed(() => {
-      const leg = animationLegs.value[animationIndex.value]
-      if (!leg) return '待機'
-      if (leg.type === 'clear') return `批次 ${leg.batchNumber}・搬離堆疊物（貨物 ${leg.cargoLabel || '?'}）`
-      return `批次 ${leg.batchNumber}・${leg.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${leg.cargoLabel || '?'}）`
+      const frame = animationLegs.value[animationIndex.value]
+      if (!frame?.moves?.length) return '待機'
+      return frame.moves
+        .map((move) => {
+          if (move.type === 'clear') return `${move.carLabel}・批次 ${move.batchNumber} 搬離堆疊物（貨物 ${move.cargoLabel || '?'}）`
+          return `${move.carLabel}・批次 ${move.batchNumber} ${move.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${move.cargoLabel || '?'}）`
+        })
+        .join(' ｜ ')
     })
 
     const fetchCargoLayout = async () => {
@@ -241,13 +251,79 @@ export default {
     }
 
 
-    const dockForBatch = (batchNumber) => {
-      const index = (Number(batchNumber) - 1) % DOCK_CELLS.length
-      return { col: DOCK_CELLS[index].col, row: DOCK_CELLS[index].row, label: DOCK_CELLS[index].label }
+    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null, carConfig) => {
+      for (let i = 0; i < route.length - 1; i++) {
+        legs.push({
+          batchNumber, type, cargoLabel, carryId,
+          carId: carConfig.id,
+          carLabel: carConfig.label,
+          carColor: carConfig.color,
+          from: route[i], to: route[i + 1]
+        })
+      }
     }
 
-    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null) => {
-      for (let i = 0; i < route.length - 1; i++) legs.push({ batchNumber, type, cargoLabel, carryId, from: route[i], to: route[i + 1] })
+    const canMove = (move, otherCurrent, otherMove) => {
+      if (!move) return false
+      const targetKey = keyOf(move.to)
+      const otherCurrentKey = keyOf(otherCurrent)
+      const otherTargetKey = otherMove ? keyOf(otherMove.to) : null
+      if (targetKey === otherCurrentKey && !otherMove) return false
+      if (otherMove && targetKey === otherTargetKey) return false
+      if (otherMove && targetKey === otherCurrentKey && keyOf(move.from) === otherTargetKey) return false
+      return true
+    }
+
+    const buildParallelFrames = (carLegQueues) => {
+      const carPositions = {}
+      const pointers = {}
+      CAR_CONFIGS.forEach((config) => {
+        carPositions[config.id] = { ...DOCK_CELLS[config.dockIndex] }
+        pointers[config.id] = 0
+      })
+
+      const frames = []
+      let safety = 0
+      while (safety < 8000) {
+        safety += 1
+        const leg1 = carLegQueues['car-1'][pointers['car-1']]
+        const leg2 = carLegQueues['car-2'][pointers['car-2']]
+        if (!leg1 && !leg2) break
+
+        const allow1 = canMove(leg1, carPositions['car-2'], leg2)
+        const allow2 = canMove(leg2, carPositions['car-1'], leg1)
+        const moves = []
+
+        if (allow1) {
+          moves.push(leg1)
+          pointers['car-1'] += 1
+          carPositions['car-1'] = { ...leg1.to }
+        }
+
+        if (allow2 && (!allow1 || keyOf(leg2.to) !== keyOf(leg1?.to || carPositions['car-1']))) {
+          moves.push(leg2)
+          pointers['car-2'] += 1
+          carPositions['car-2'] = { ...leg2.to }
+        }
+
+        if (!moves.length) {
+          if (leg1) {
+            moves.push(leg1)
+            pointers['car-1'] += 1
+            carPositions['car-1'] = { ...leg1.to }
+          } else if (leg2) {
+            moves.push(leg2)
+            pointers['car-2'] += 1
+            carPositions['car-2'] = { ...leg2.to }
+          }
+        }
+
+        frames.push({
+          moves,
+          carPositions: JSON.parse(JSON.stringify(carPositions))
+        })
+      }
+      return frames
     }
 
     const buildAnimationLegs = () => {
@@ -255,10 +331,12 @@ export default {
 
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
-      const legs = []
+      const carLegQueues = { 'car-1': [], 'car-2': [] }
       const logs = []
 
-      selectedPreview.value.batches.forEach((batch) => {
+      selectedPreview.value.batches.forEach((batch, batchIndex) => {
+        const carConfig = CAR_CONFIGS[batchIndex % CAR_CONFIGS.length]
+        const queue = carLegQueues[carConfig.id]
         const positions = batch.positions || []
         positions.forEach((pos, posIndex) => {
           if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z)) || !Number.isFinite(Number(pos?.y))) {
@@ -266,10 +344,10 @@ export default {
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
-          const dock = dockForBatch(batch.batch_number)
+          const dock = DOCK_CELLS[carConfig.dockIndex]
 
           // 1) 先去取貨（不載貨）
-          pushPathLegs(legs, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel)
+          pushPathLegs(queue, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
@@ -280,21 +358,20 @@ export default {
               return
             }
             const blockerId = String(blocker.id)
-            pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId)
+            pushPathLegs(queue, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId, carConfig)
             moveOccupancy(simulationState, target, staging)
             simulationState.cargoCells.set(blockerId, { ...staging })
-            logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
-            pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
+            logs.unshift(`${carConfig.label} 批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
+            pushPathLegs(queue, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
           // 3) 最後回到對應出貨口（此段載貨）
-          pushPathLegs(legs, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel)
+          pushPathLegs(queue, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
-          if (legs.length > 4000) return
         })
       })
 
-      animationLegs.value = legs.slice(0, 4000)
+      animationLegs.value = buildParallelFrames(carLegQueues).slice(0, 4000)
       simulationEvents.value = logs
       previewCargoCells.value = new Map(simulationState.cargoCells)
       animationIndex.value = 0
@@ -324,20 +401,22 @@ export default {
       const cellH = (h - pad * 2) / GRID_ROWS
       const center = (cell) => ({ x: pad + cell.col * cellW + cellW / 2, y: pad + cell.row * cellH + cellH / 2 })
       const worldToGrid = getGridMapper()
-      const current = animationLegs.value[animationIndex.value]
+      const currentFrame = animationLegs.value[animationIndex.value]
 
       const getDisplayCargoLabel = () => {
-        if (!current?.cargoLabel) return null
-        const currentIsAtDock = DOCK_CELLS.some(d => d.col === current.to.col && d.row === current.to.row)
-        if (current.type === 'return' && currentIsAtDock) {
+        const activeMove = currentFrame?.moves?.[0]
+        if (!activeMove?.cargoLabel) return null
+        const currentIsAtDock = DOCK_CELLS.some(d => d.col === activeMove.to.col && d.row === activeMove.to.row)
+        if (activeMove.type === 'return' && currentIsAtDock) {
           for (let i = animationIndex.value + 1; i < animationLegs.value.length; i++) {
-            const nextLeg = animationLegs.value[i]
-            if (nextLeg?.cargoLabel && nextLeg.type === 'pickup') {
-              return String(nextLeg.cargoLabel)
+            const nextFrame = animationLegs.value[i]
+            const nextPickup = nextFrame?.moves?.find((move) => move.type === 'pickup' && move.cargoLabel)
+            if (nextPickup) {
+              return String(nextPickup.cargoLabel)
             }
           }
         }
-        return String(current.cargoLabel)
+        return String(activeMove.cargoLabel)
       }
 
       ctx.clearRect(0, 0, w, h)
@@ -357,10 +436,10 @@ export default {
       // 方形標出要取貨與堆疊物，並讓物品隨搬運動態更新位置
       const dynamicCells = new Map(previewCargoCells.value)
       for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
-        const leg = animationLegs.value[i]
-        if (leg?.carryId) {
-          dynamicCells.set(String(leg.carryId), { ...leg.to })
-        }
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          if (move?.carryId) dynamicCells.set(String(move.carryId), { ...move.to })
+        })
       }
 
       const displayCargoLabel = getDisplayCargoLabel()
@@ -388,24 +467,29 @@ export default {
       }
 
       for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
-        const leg = animationLegs.value[i]
-        const from = center(leg.from)
-        const to = center(leg.to)
-        ctx.strokeStyle = leg.type === 'clear' ? '#c084fc' : (leg.type === 'pickup' ? '#60a5fa' : '#34d399')
-        ctx.lineWidth = 3
-        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          const from = center(move.from)
+          const to = center(move.to)
+          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : '#34d399')
+          ctx.lineWidth = 3
+          ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+        })
       }
 
-      if (current) {
-        const to = center(current.to)
-        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
-
-        if (current.cargoLabel) {
-          ctx.fillStyle = '#fef08a'
-          ctx.font = '12px sans-serif'
-          ctx.fillText(`貨物 ${current.cargoLabel}`, to.x + 8, to.y - 10)
-        }
-      }
+      const positions = currentFrame?.carPositions || Object.fromEntries(
+        CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }])
+      )
+      CAR_CONFIGS.forEach((config, index) => {
+        const carCell = positions[config.id]
+        if (!carCell) return
+        const to = center(carCell)
+        ctx.fillStyle = config.color
+        ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#fef08a'
+        ctx.font = '12px sans-serif'
+        ctx.fillText(config.label, to.x + 8, to.y - 10 + index * 12)
+      })
     }
 
     const startAnimation = () => {
@@ -418,6 +502,16 @@ export default {
     }
     const pauseAnimation = () => { if (timer) { clearInterval(timer); timer = null }; isAnimating.value = false }
     const resetAnimation = () => { pauseAnimation(); animationIndex.value = 0; drawCanvas() }
+    const stepForward = () => {
+      if (!animationLegs.value.length) return
+      pauseAnimation()
+      animationIndex.value = Math.min(animationLegs.value.length - 1, animationIndex.value + 1)
+    }
+    const stepBackward = () => {
+      if (!animationLegs.value.length) return
+      pauseAnimation()
+      animationIndex.value = Math.max(0, animationIndex.value - 1)
+    }
 
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
@@ -449,7 +543,7 @@ export default {
     return {
       selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
       animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
-      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation,
+      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
   }
