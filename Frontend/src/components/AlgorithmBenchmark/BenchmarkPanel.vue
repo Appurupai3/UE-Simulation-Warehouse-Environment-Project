@@ -331,6 +331,7 @@ export default {
 
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
+      const initialCargoCells = new Map(simulationState.cargoCells)
       const carLegQueues = { 'car-1': [], 'car-2': [] }
       const logs = []
 
@@ -373,7 +374,7 @@ export default {
 
       animationLegs.value = buildParallelFrames(carLegQueues).slice(0, 4000)
       simulationEvents.value = logs
-      previewCargoCells.value = new Map(simulationState.cargoCells)
+      previewCargoCells.value = initialCargoCells
       animationIndex.value = 0
     }
 
