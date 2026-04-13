@@ -120,7 +120,7 @@ export default {
     const getGridMapper = () => {
       const points = cargoLayout.value.map(c => c?.position).filter(Boolean)
       const xLevels = [...new Set(points.map(p => Number(p.x)).filter(Number.isFinite))].sort((a, b) => a - b)
-      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => b - a)
+      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => a - b)
 
       if (xLevels.length === 0 || zLevels.length === 0) {
         return () => ({ col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row })
