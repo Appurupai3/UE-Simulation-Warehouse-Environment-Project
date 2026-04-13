@@ -427,7 +427,7 @@ export default {
         })
       }
 
-      const activeCargoMoves = (currentFrame?.moves || []).filter((move) => move.type !== 'clear' && move.cargoLabel)
+      const activeCargoMoves = (currentFrame?.moves || []).filter((move) => move.cargoLabel)
       const blockerTargets = []
       activeCargoMoves.forEach((move) => {
         const targetPos = getCargoPositionByLabel(move.cargoLabel)
