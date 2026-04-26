@@ -169,6 +169,67 @@ export default {
       return path
     }
 
+    const buildSmartGridPath = (from, to, state, algorithmName) => {
+      if (algorithmName !== 'obstacle_aware') return buildGridPath(from, to)
+
+      const startKey = keyOf(from)
+      const goalKey = keyOf(to)
+      const frontier = [{ key: startKey, cost: 0, priority: 0 }]
+      const cameFrom = new Map([[startKey, null]])
+      const costSoFar = new Map([[startKey, 0]])
+
+      const parseKey = (key) => {
+        const [col, row] = key.split('-').map(Number)
+        return { col, row }
+      }
+
+      const neighborsOf = (cell) => (
+        [
+          { col: cell.col + 1, row: cell.row },
+          { col: cell.col - 1, row: cell.row },
+          { col: cell.col, row: cell.row + 1 },
+          { col: cell.col, row: cell.row - 1 }
+        ]
+      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
+
+      const heuristic = (a, b) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row)
+
+      while (frontier.length > 0) {
+        frontier.sort((a, b) => a.priority - b.priority)
+        const current = frontier.shift()
+        if (!current) break
+        if (current.key === goalKey) break
+
+        const currentCell = parseKey(current.key)
+        const currentCost = costSoFar.get(current.key) ?? 0
+
+        neighborsOf(currentCell).forEach((nextCell) => {
+          const nextKey = keyOf(nextCell)
+          const occupied = state?.occupancy?.get(nextKey) || 0
+          const dockPenalty = DOCK_CELLS.some((dock) => dock.col === nextCell.col && dock.row === nextCell.row) && nextKey !== goalKey ? 1.5 : 0
+          const occupiedPenalty = occupied * 0.25
+          const newCost = currentCost + 1 + dockPenalty + occupiedPenalty
+
+          if (!costSoFar.has(nextKey) || newCost < (costSoFar.get(nextKey) ?? Number.POSITIVE_INFINITY)) {
+            costSoFar.set(nextKey, newCost)
+            const priority = newCost + heuristic(nextCell, to)
+            frontier.push({ key: nextKey, cost: newCost, priority })
+            cameFrom.set(nextKey, current.key)
+          }
+        })
+      }
+
+      if (!cameFrom.has(goalKey)) return buildGridPath(from, to)
+
+      const reversedPath = []
+      let cursor = goalKey
+      while (cursor) {
+        reversedPath.push(parseKey(cursor))
+        cursor = cameFrom.get(cursor) || null
+      }
+      return reversedPath.reverse()
+    }
+
     const getBlockers = (targetPos) => {
       if (!targetPos || !Number.isFinite(Number(targetPos.x)) || !Number.isFinite(Number(targetPos.z)) || !Number.isFinite(Number(targetPos.y))) {
         return []
@@ -335,6 +396,8 @@ export default {
       const initialCargoCells = new Map(simulationState.cargoCells)
       const carLegQueues = { 'car-1': [], 'car-2': [] }
       const logs = []
+      const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
+      if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
 
       selectedPreview.value.batches.forEach((batch, batchIndex) => {
         const carConfig = CAR_CONFIGS[batchIndex % CAR_CONFIGS.length]
@@ -349,7 +412,7 @@ export default {
           const dock = DOCK_CELLS[carConfig.dockIndex]
 
           // 1) 先去取貨（不載貨）
-          pushPathLegs(queue, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
+          pushPathLegs(queue, buildSmartGridPath(dock, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
@@ -360,15 +423,15 @@ export default {
               return
             }
             const blockerId = String(blocker.id)
-            pushPathLegs(queue, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId, carConfig)
+            pushPathLegs(queue, buildSmartGridPath(target, staging, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, blockerId, carConfig)
             moveOccupancy(simulationState, target, staging)
             simulationState.cargoCells.set(blockerId, { ...staging })
             logs.unshift(`${carConfig.label} 批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
-            pushPathLegs(queue, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel, null, carConfig)
+            pushPathLegs(queue, buildSmartGridPath(staging, target, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
           // 3) 最後回到對應出貨口（此段載貨）
-          pushPathLegs(queue, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
+          pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
         })
       })
