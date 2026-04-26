@@ -111,6 +111,8 @@ export default {
       if (!frame?.moves?.length) return '待機'
       return frame.moves
         .map((move) => {
+          if (move.type === 'wait') return `${move.carLabel}・等待（避碰）`
+          if (move.type === 'replan') return `${move.carLabel}・CBS 重規劃移動`
           if (move.type === 'clear') return `${move.carLabel}・批次 ${move.batchNumber} 搬離堆疊物（貨物 ${move.cargoLabel || '?'}）`
           return `${move.carLabel}・批次 ${move.batchNumber} ${move.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${move.cargoLabel || '?'}）`
         })
@@ -325,66 +327,105 @@ export default {
       }
     }
 
-    const canMove = (move, otherCurrent, otherMove) => {
-      if (!move) return false
-      const targetKey = keyOf(move.to)
-      const otherCurrentKey = keyOf(otherCurrent)
-      const otherTargetKey = otherMove ? keyOf(otherMove.to) : null
-      if (targetKey === otherCurrentKey && !otherMove) return false
-      if (otherMove && targetKey === otherTargetKey) return false
-      if (otherMove && targetKey === otherCurrentKey && keyOf(move.from) === otherTargetKey) return false
-      return true
-    }
-
     const buildParallelFrames = (carLegQueues) => {
-      const carPositions = {}
-      const pointers = {}
-      CAR_CONFIGS.forEach((config) => {
-        carPositions[config.id] = { ...DOCK_CELLS[config.dockIndex] }
-        pointers[config.id] = 0
+      const isCellFree = (reservations, time, cell) => !reservations.vertex.has(`${time}:${keyOf(cell)}`)
+      const isEdgeFree = (reservations, time, from, to) => !reservations.edge.has(`${time}:${keyOf(to)}->${keyOf(from)}`)
+      const addReservation = (reservations, time, from, to) => {
+        reservations.vertex.add(`${time}:${keyOf(to)}`)
+        reservations.edge.add(`${time}:${keyOf(from)}->${keyOf(to)}`)
+      }
+      const getNeighbors = (cell) => (
+        [
+          { col: cell.col + 1, row: cell.row },
+          { col: cell.col - 1, row: cell.row },
+          { col: cell.col, row: cell.row + 1 },
+          { col: cell.col, row: cell.row - 1 }
+        ]
+      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
+
+      const chooseDetour = (currentCell, targetCell, reservations, nextTime) => {
+        const candidates = getNeighbors(currentCell)
+          .filter((next) => isCellFree(reservations, nextTime, next))
+          .filter((next) => isEdgeFree(reservations, nextTime, currentCell, next))
+          .sort((a, b) => (Math.abs(a.col - targetCell.col) + Math.abs(a.row - targetCell.row)) - (Math.abs(b.col - targetCell.col) + Math.abs(b.row - targetCell.row)))
+        return candidates[0] || null
+      }
+
+      const buildPrioritizedPlan = (config, queue, reservations) => {
+        const plan = []
+        let current = { ...DOCK_CELLS[config.dockIndex] }
+        let pointer = 0
+        let time = 0
+        let guard = 0
+
+        while (pointer < queue.length && guard < 12000) {
+          guard += 1
+          const leg = queue[pointer]
+          const nextTime = time + 1
+          const blocked = !isCellFree(reservations, nextTime, leg.to) || !isEdgeFree(reservations, nextTime, current, leg.to)
+
+          if (!blocked) {
+            const move = { ...leg, from: { ...current }, to: { ...leg.to } }
+            plan.push(move)
+            addReservation(reservations, nextTime, current, leg.to)
+            current = { ...leg.to }
+            pointer += 1
+            time = nextTime
+            continue
+          }
+
+          const detourCell = chooseDetour(current, leg.to, reservations, nextTime)
+          if (detourCell) {
+            const detourMove = {
+              ...leg,
+              type: 'replan',
+              from: { ...current },
+              to: { ...detourCell }
+            }
+            plan.push(detourMove)
+            addReservation(reservations, nextTime, current, detourCell)
+            current = { ...detourCell }
+            time = nextTime
+            continue
+          }
+
+          const waitMove = {
+            ...leg,
+            type: 'wait',
+            from: { ...current },
+            to: { ...current },
+            cargoLabel: ''
+          }
+          plan.push(waitMove)
+          addReservation(reservations, nextTime, current, current)
+          time = nextTime
+        }
+
+        return plan
+      }
+
+      const priorityOrder = [...CAR_CONFIGS].sort((a, b) => carLegQueues[a.id].length - carLegQueues[b.id].length)
+      const reservations = { vertex: new Set(), edge: new Set() }
+      const plans = {}
+      priorityOrder.forEach((config) => {
+        plans[config.id] = buildPrioritizedPlan(config, carLegQueues[config.id], reservations)
       })
 
+      const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }]))
       const frames = []
-      let safety = 0
-      while (safety < 8000) {
-        safety += 1
-        const leg1 = carLegQueues['car-1'][pointers['car-1']]
-        const leg2 = carLegQueues['car-2'][pointers['car-2']]
-        if (!leg1 && !leg2) break
 
-        const allow1 = canMove(leg1, carPositions['car-2'], leg2)
-        const allow2 = canMove(leg2, carPositions['car-1'], leg1)
+      for (let t = 0; t < maxLen; t++) {
         const moves = []
-
-        if (allow1) {
-          moves.push(leg1)
-          pointers['car-1'] += 1
-          carPositions['car-1'] = { ...leg1.to }
-        }
-
-        if (allow2 && (!allow1 || keyOf(leg2.to) !== keyOf(leg1?.to || carPositions['car-1']))) {
-          moves.push(leg2)
-          pointers['car-2'] += 1
-          carPositions['car-2'] = { ...leg2.to }
-        }
-
-        if (!moves.length) {
-          if (leg1) {
-            moves.push(leg1)
-            pointers['car-1'] += 1
-            carPositions['car-1'] = { ...leg1.to }
-          } else if (leg2) {
-            moves.push(leg2)
-            pointers['car-2'] += 1
-            carPositions['car-2'] = { ...leg2.to }
-          }
-        }
-
-        frames.push({
-          moves,
-          carPositions: JSON.parse(JSON.stringify(carPositions))
+        CAR_CONFIGS.forEach((config) => {
+          const move = plans[config.id]?.[t]
+          if (!move) return
+          carPositions[config.id] = { ...move.to }
+          if (move.type !== 'wait') moves.push(move)
         })
+        frames.push({ moves, carPositions: JSON.parse(JSON.stringify(carPositions)) })
       }
+
       return frames
     }
 
