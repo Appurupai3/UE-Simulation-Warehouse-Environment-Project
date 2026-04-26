@@ -293,13 +293,14 @@ export default {
       return cells
     }
 
-    const findAvailableStagingCell = (targetCell, state) => {
+    const findAvailableStagingCell = (targetCell, state, protectedCellCounts = new Map()) => {
       const maxDistance = Math.max(GRID_COLS, GRID_ROWS)
       for (let distance = 1; distance <= maxDistance; distance++) {
         const ringCells = getManhattanRingCells(targetCell, distance)
         for (const cell of ringCells) {
           if (DOCK_CELLS.some(d => d.col === cell.col && d.row === cell.row)) continue
           if (cell.row === GRID_ROWS - 1) continue
+          if ((protectedCellCounts.get(keyOf(cell)) || 0) > 0) continue
           const used = state.occupancy.get(keyOf(cell)) || 0
           if (used < state.maxPerCell) return cell
         }
@@ -325,6 +326,21 @@ export default {
           from: route[i], to: route[i + 1]
         })
       }
+    }
+
+    const buildPendingPickupCellCounter = (preview, worldToGrid) => {
+      const pending = new Map()
+      const batches = preview?.batches || []
+      batches.forEach((batch) => {
+        const positions = batch?.positions || []
+        positions.forEach((pos) => {
+          if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z))) return
+          const cell = worldToGrid(pos.x, pos.z)
+          const key = keyOf(cell)
+          pending.set(key, (pending.get(key) || 0) + 1)
+        })
+      })
+      return pending
     }
 
     const buildParallelFrames = (carLegQueues) => {
@@ -463,6 +479,7 @@ export default {
       const simulationState = initSimulationState(worldToGrid)
       const initialCargoCells = new Map(simulationState.cargoCells)
       const carLegQueues = { 'car-1': [], 'car-2': [] }
+      const pendingPickupCellCounts = buildPendingPickupCellCounter(selectedPreview.value, worldToGrid)
       const logs = []
       const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
       if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
@@ -478,6 +495,8 @@ export default {
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
           const dock = DOCK_CELLS[carConfig.dockIndex]
+          const targetKey = keyOf(target)
+          pendingPickupCellCounts.set(targetKey, Math.max(0, (pendingPickupCellCounts.get(targetKey) || 0) - 1))
 
           // 1) 先去取貨（不載貨）
           pushPathLegs(queue, buildSmartGridPath(dock, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
@@ -485,7 +504,7 @@ export default {
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
           blockers.forEach((blocker, blockerIndex) => {
-            const staging = findAvailableStagingCell(target, simulationState)
+            const staging = findAvailableStagingCell(target, simulationState, pendingPickupCellCounts)
             if (!staging) {
               logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 無可用暫存空間`) 
               return
