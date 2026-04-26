@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 from app.services.interfaces import IAlgorithm
-from app.services.algorithms import GreedyAlgorithm, AStarAlgorithm, OriginalAlgorithm
+from app.services.algorithms import GreedyAlgorithm, AStarAlgorithm, OriginalAlgorithm, ObstacleAvoidanceAlgorithm
 
 
 class AlgorithmRegistry:
@@ -14,6 +14,7 @@ class AlgorithmRegistry:
         """註冊內建演算法"""
         self.register("greedy", GreedyAlgorithm())
         self.register("astar", AStarAlgorithm())
+        self.register("obstacle_aware", ObstacleAvoidanceAlgorithm())
         self.register("original", OriginalAlgorithm())
     
     def register(self, name: str, algorithm: IAlgorithm):

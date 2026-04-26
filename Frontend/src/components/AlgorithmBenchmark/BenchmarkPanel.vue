@@ -74,15 +74,15 @@ export default {
     const GRID_ROWS = 10
     const GRID_COLS = 5
     const DOCK_CELLS = [
-      { col: 0, row: 0, label: 'X1Y1' },
-      { col: 3, row: 0, label: 'X4Y1' }
+      { col: 0, row: 1, label: 'X1Y2' },
+      { col: 3, row: 1, label: 'X4Y2' }
     ]
     const CAR_CONFIGS = [
       { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0 },
       { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1 }
     ]
 
-    const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
+    const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
@@ -99,7 +99,8 @@ export default {
     const availableAlgorithms = [
       { value: 'original', label: '原始順序（不整理）' },
       { value: 'greedy', label: '貪婪演算法' },
-      { value: 'astar', label: 'A* 演算法' }
+      { value: 'astar', label: 'A* 演算法' },
+      { value: 'obstacle_aware', label: '避障優先演算法' }
     ]
     const { loading, error, optimizeAllOrders } = useBenchmark()
 
