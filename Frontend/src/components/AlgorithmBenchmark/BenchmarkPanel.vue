@@ -343,12 +343,42 @@ export default {
         ]
       ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
 
-      const chooseDetour = (currentCell, targetCell, reservations, nextTime) => {
-        const candidates = getNeighbors(currentCell)
-          .filter((next) => isCellFree(reservations, nextTime, next))
-          .filter((next) => isEdgeFree(reservations, nextTime, currentCell, next))
-          .sort((a, b) => (Math.abs(a.col - targetCell.col) + Math.abs(a.row - targetCell.row)) - (Math.abs(b.col - targetCell.col) + Math.abs(b.row - targetCell.row)))
-        return candidates[0] || null
+      const findPathWithReservations = (startCell, targetCell, startTime, reservations, maxDepth = 48) => {
+        const startKey = `${startTime}:${keyOf(startCell)}`
+        const queue = [{ cell: { ...startCell }, time: startTime }]
+        const visited = new Set([startKey])
+        const parents = new Map([[startKey, null]])
+
+        while (queue.length) {
+          const current = queue.shift()
+          if (!current) break
+          if (keyOf(current.cell) === keyOf(targetCell)) {
+            const path = []
+            let cursorKey = `${current.time}:${keyOf(current.cell)}`
+            while (cursorKey) {
+              const [timeText, coordText] = cursorKey.split(':')
+              const [col, row] = coordText.split('-').map(Number)
+              path.push({ col, row, time: Number(timeText) })
+              cursorKey = parents.get(cursorKey) || null
+            }
+            return path.reverse()
+          }
+
+          if (current.time - startTime >= maxDepth) continue
+          const options = [...getNeighbors(current.cell), { ...current.cell }]
+          options.forEach((nextCell) => {
+            const nextTime = current.time + 1
+            if (!isCellFree(reservations, nextTime, nextCell)) return
+            if (!isEdgeFree(reservations, nextTime, current.cell, nextCell)) return
+            const nextKey = `${nextTime}:${keyOf(nextCell)}`
+            if (visited.has(nextKey)) return
+            visited.add(nextKey)
+            parents.set(nextKey, `${current.time}:${keyOf(current.cell)}`)
+            queue.push({ cell: nextCell, time: nextTime })
+          })
+        }
+
+        return null
       }
 
       const buildPrioritizedPlan = (config, queue, reservations) => {
@@ -361,44 +391,41 @@ export default {
         while (pointer < queue.length && guard < 12000) {
           guard += 1
           const leg = queue[pointer]
-          const nextTime = time + 1
-          const blocked = !isCellFree(reservations, nextTime, leg.to) || !isEdgeFree(reservations, nextTime, current, leg.to)
+          const segmentPath = findPathWithReservations(current, leg.to, time, reservations)
 
-          if (!blocked) {
-            const move = { ...leg, from: { ...current }, to: { ...leg.to } }
-            plan.push(move)
-            addReservation(reservations, nextTime, current, leg.to)
-            current = { ...leg.to }
-            pointer += 1
-            time = nextTime
-            continue
-          }
-
-          const detourCell = chooseDetour(current, leg.to, reservations, nextTime)
-          if (detourCell) {
-            const detourMove = {
+          if (!segmentPath || segmentPath.length < 2) {
+            const waitMove = {
               ...leg,
-              type: 'replan',
+              type: 'wait',
               from: { ...current },
-              to: { ...detourCell }
+              to: { ...current },
+              cargoLabel: ''
             }
-            plan.push(detourMove)
-            addReservation(reservations, nextTime, current, detourCell)
-            current = { ...detourCell }
-            time = nextTime
+            plan.push(waitMove)
+            addReservation(reservations, time + 1, current, current)
+            time += 1
             continue
           }
 
-          const waitMove = {
-            ...leg,
-            type: 'wait',
-            from: { ...current },
-            to: { ...current },
-            cargoLabel: ''
+          for (let i = 1; i < segmentPath.length; i++) {
+            const prev = segmentPath[i - 1]
+            const next = segmentPath[i]
+            const isFinalStep = i === segmentPath.length - 1
+            const moveType = isFinalStep ? leg.type : (keyOf(prev) === keyOf(next) ? 'wait' : 'replan')
+            const move = {
+              ...leg,
+              type: moveType,
+              from: { col: prev.col, row: prev.row },
+              to: { col: next.col, row: next.row },
+              cargoLabel: moveType === 'wait' ? '' : leg.cargoLabel
+            }
+            plan.push(move)
+            addReservation(reservations, next.time, move.from, move.to)
           }
-          plan.push(waitMove)
-          addReservation(reservations, nextTime, current, current)
-          time = nextTime
+
+          current = { ...leg.to }
+          time = segmentPath[segmentPath.length - 1].time
+          pointer += 1
         }
 
         return plan
