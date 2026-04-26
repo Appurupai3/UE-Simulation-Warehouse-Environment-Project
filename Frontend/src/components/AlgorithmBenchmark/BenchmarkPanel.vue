@@ -56,6 +56,7 @@
           <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
         </div>
         <p v-if="animationLegs.length" class="sim-status">進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }} ｜ {{ currentLegLabel }}</p>
+        <p v-if="animationTruncated" class="sim-warning">⚠️ 動畫過長，僅顯示前 {{ MAX_ANIMATION_FRAMES }} 個步驟。</p>
         <div v-if="simulationEvents.length" class="state-log">
           <div v-for="(log, idx) in simulationEvents.slice(0, 6)" :key="`log-${idx}`" class="log-row">{{ log }}</div>
         </div>
@@ -81,15 +82,18 @@ export default {
       { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0 },
       { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1 }
     ]
+    const MAX_ANIMATION_FRAMES = 4000
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
     const cargoLayout = ref([])
+    const cargoLayoutReady = ref(false)
     const simCanvasRef = ref(null)
 
     const animationLegs = ref([])
+    const animationTruncated = ref(false)
     const animationIndex = ref(0)
     const isAnimating = ref(false)
     const simulationEvents = ref([])
@@ -103,6 +107,7 @@ export default {
       { value: 'obstacle_aware', label: '避障優先演算法' }
     ]
     const { loading, error, optimizeAllOrders } = useBenchmark()
+    let cargoLayoutPromise = null
 
     const getAlgorithmLabel = (name) => availableAlgorithms.find(a => a.value === name)?.label || name
 
@@ -118,13 +123,24 @@ export default {
     })
 
     const fetchCargoLayout = async () => {
+      if (cargoLayoutPromise) return cargoLayoutPromise
+      cargoLayoutPromise = (async () => {
+        cargoLayoutReady.value = false
+        try {
+          const response = await fetch('http://localhost:8000/api/benchmark/cargo-layout')
+          if (!response.ok) return
+          const data = await response.json()
+          cargoLayout.value = data?.cargo || []
+        } catch (e) {
+          console.warn('載入 cargo-layout 失敗', e)
+        } finally {
+          cargoLayoutReady.value = true
+        }
+      })()
       try {
-        const response = await fetch('http://localhost:8000/api/benchmark/cargo-layout')
-        if (!response.ok) return
-        const data = await response.json()
-        cargoLayout.value = data?.cargo || []
-      } catch (e) {
-        console.warn('載入 cargo-layout 失敗', e)
+        await cargoLayoutPromise
+      } finally {
+        cargoLayoutPromise = null
       }
     }
 
@@ -230,35 +246,96 @@ export default {
       return reversedPath.reverse()
     }
 
-    const getBlockers = (targetPos) => {
-      if (!targetPos || !Number.isFinite(Number(targetPos.x)) || !Number.isFinite(Number(targetPos.z)) || !Number.isFinite(Number(targetPos.y))) {
-        return []
-      }
-      return cargoLayout.value
-        .filter(item => item?.position)
-        .map((item) => ({ id: parseCargoId(item.id), pos: item.position }))
+    const getBlockersByCargo = (targetCargoId, state) => {
+      if (!Number.isFinite(targetCargoId)) return []
+      const targetCell = state.cargoCells.get(String(targetCargoId))
+      if (!targetCell) return []
+      const stack = state.stacks.get(keyOf(targetCell)) || []
+      const targetIndex = stack.indexOf(String(targetCargoId))
+      if (targetIndex < 0) return []
+      return stack
+        .slice(targetIndex + 1)
+        .reverse()
+        .map((id) => ({ id: Number(id) }))
         .filter(item => Number.isFinite(item.id))
-        .filter(item => Number.isFinite(Number(item.pos.x)) && Number.isFinite(Number(item.pos.z)) && Number.isFinite(Number(item.pos.y)))
-        .filter(item => Math.abs(item.pos.x - targetPos.x) < 0.0001 && Math.abs(item.pos.z - targetPos.z) < 0.0001 && item.pos.y > targetPos.y)
-        .sort((a, b) => b.pos.y - a.pos.y)
     }
 
-    const keyOf = (cell) => `${cell.col}-${cell.row}`
+    const getBlockersAtCell = (targetCell, dynamicCells, targetCargoId) => {
+      if (!targetCell) return []
+      const blockers = []
+      dynamicCells.forEach((cell, cargoId) => {
+        const id = Number(cargoId)
+        if (!Number.isFinite(id) || id === targetCargoId) return
+        if (cell.col === targetCell.col && cell.row === targetCell.row) blockers.push({ id })
+      })
+      return blockers
+    }
 
-    const initSimulationState = (worldToGrid) => {
+    const removeFromStack = (state, cargoId, cell) => {
+      const key = keyOf(cell)
+      const stack = state.stacks.get(key) || []
+      const nextStack = stack.filter((id) => id !== String(cargoId))
+      state.stacks.set(key, nextStack)
+    }
+
+    const addToStack = (state, cargoId, cell) => {
+      const key = keyOf(cell)
+      const stack = state.stacks.get(key) || []
+      stack.push(String(cargoId))
+      state.stacks.set(key, stack)
+    }
+
+    const moveCargoState = (state, cargoId, fromCell, toCell) => {
+      if (!Number.isFinite(Number(cargoId))) return
+      removeFromStack(state, cargoId, fromCell)
+      addToStack(state, cargoId, toCell)
+      state.cargoCells.set(String(cargoId), { ...toCell })
+    }
+
+    const initCargoState = (worldToGrid) => {
       const occupancy = new Map()
       const cargoCells = new Map()
-      cargoLayout.value.forEach((c) => {
-        const pos = c?.position
-        if (!pos) return
-        const cargoId = parseCargoId(c.id)
-        const cell = worldToGrid(pos.x, pos.z)
-        const key = keyOf(cell)
-        occupancy.set(key, (occupancy.get(key) || 0) + 1)
-        if (Number.isFinite(cargoId)) cargoCells.set(String(cargoId), { ...cell })
-      })
-      return { occupancy, cargoCells, maxPerCell: 6 }
+      const stacks = new Map()
+      cargoLayout.value
+        .filter(item => item?.position)
+        .map((item) => ({
+          id: parseCargoId(item.id),
+          pos: item.position,
+          y: Number(item?.position?.y)
+        }))
+        .filter(item => Number.isFinite(item.id))
+        .sort((a, b) => a.y - b.y)
+        .forEach((item) => {
+          const cell = worldToGrid(item.pos.x, item.pos.z)
+          const key = keyOf(cell)
+          occupancy.set(key, (occupancy.get(key) || 0) + 1)
+          cargoCells.set(String(item.id), { ...cell })
+          const stack = stacks.get(key) || []
+          stack.push(String(item.id))
+          stacks.set(key, stack)
+        })
+
+      return { occupancy, cargoCells, stacks, maxPerCell: 6 }
     }
+
+    const getCargoPositionByLabel = (cargoLabel) => {
+      const targetId = Number(cargoLabel)
+      if (!Number.isFinite(targetId)) return null
+      const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
+      return hit?.position || null
+    }
+
+    const initSimulationState = (worldToGrid) => {
+      if (!cargoLayoutReady.value || !cargoLayout.value.length) {
+        animationLegs.value = []
+        animationTruncated.value = false
+        simulationEvents.value = ['等待 cargo-layout 載入完成後再建立模擬路徑']
+        previewCargoCells.value = new Map()
+        return []
+      }
+      return initCargoState(worldToGrid)
+    }
+    const keyOf = (cell) => `${cell.col}-${cell.row}`
 
     const getManhattanRingCells = (centerCell, distance) => {
       const cells = []
@@ -390,9 +467,16 @@ export default {
 
     const buildAnimationLegs = () => {
       if (!selectedPreview.value?.batches?.length) { animationLegs.value = []; return }
+      if (!cargoLayoutReady.value || !cargoLayout.value.length) {
+        animationLegs.value = []
+        animationTruncated.value = false
+        simulationEvents.value = ['等待 cargo-layout 載入完成後再建立模擬路徑']
+        return
+      }
 
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
+      if (!simulationState?.cargoCells) return
       const initialCargoCells = new Map(simulationState.cargoCells)
       const carLegQueues = { 'car-1': [], 'car-2': [] }
       const logs = []
@@ -408,6 +492,7 @@ export default {
             return
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
+          const cargoId = Number(cargoLabel)
           const target = worldToGrid(pos.x, pos.z)
           const dock = DOCK_CELLS[carConfig.dockIndex]
 
@@ -415,7 +500,7 @@ export default {
           pushPathLegs(queue, buildSmartGridPath(dock, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
-          const blockers = getBlockers(pos).slice(0, 4)
+          const blockers = getBlockersByCargo(cargoId, simulationState).slice(0, 4)
           blockers.forEach((blocker, blockerIndex) => {
             const staging = findAvailableStagingCell(target, simulationState)
             if (!staging) {
@@ -425,18 +510,22 @@ export default {
             const blockerId = String(blocker.id)
             pushPathLegs(queue, buildSmartGridPath(target, staging, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, blockerId, carConfig)
             moveOccupancy(simulationState, target, staging)
-            simulationState.cargoCells.set(blockerId, { ...staging })
+            moveCargoState(simulationState, blockerId, target, staging)
             logs.unshift(`${carConfig.label} 批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
             pushPathLegs(queue, buildSmartGridPath(staging, target, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
           // 3) 最後回到對應出貨口（此段載貨）
           pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
-          simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
+          moveCargoState(simulationState, cargoLabel, target, { col: dock.col, row: dock.row })
+          moveOccupancy(simulationState, target, { col: dock.col, row: dock.row })
         })
       })
 
-      animationLegs.value = buildParallelFrames(carLegQueues).slice(0, 4000)
+      const builtFrames = buildParallelFrames(carLegQueues)
+      animationTruncated.value = builtFrames.length > MAX_ANIMATION_FRAMES
+      animationLegs.value = builtFrames.slice(0, MAX_ANIMATION_FRAMES)
+      if (animationTruncated.value) logs.unshift(`動畫總長 ${builtFrames.length} 步，已截斷為前 ${MAX_ANIMATION_FRAMES} 步`)
       simulationEvents.value = logs
       previewCargoCells.value = initialCargoCells
       animationIndex.value = 0
@@ -446,13 +535,6 @@ export default {
       const text = String(rawId ?? '')
       if (text.startsWith('case ')) return Number(text.replace('case ', ''))
       return Number(text)
-    }
-
-    const getCargoPositionByLabel = (cargoLabel) => {
-      const targetId = Number(cargoLabel)
-      if (!Number.isFinite(targetId)) return null
-      const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
-      return hit?.position || null
     }
 
     const drawCanvas = () => {
@@ -496,7 +578,7 @@ export default {
       activeCargoMoves.forEach((move) => {
         const targetPos = getCargoPositionByLabel(move.cargoLabel)
         if (!targetPos) return
-        blockerTargets.push(targetPos)
+        blockerTargets.push({ targetPos, cargoLabel: move.cargoLabel })
         const highlightedCell = dynamicCells.get(String(move.cargoLabel)) || worldToGrid(targetPos.x, targetPos.z)
         const targetX = pad + highlightedCell.col * cellW
         const targetY = pad + highlightedCell.row * cellH
@@ -505,8 +587,10 @@ export default {
         ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
       })
 
-      blockerTargets.forEach((targetPos) => {
-        const blockerIds = getBlockers(targetPos).map(b => String(b.id)).slice(0, 4)
+      blockerTargets.forEach(({ targetPos, cargoLabel }) => {
+        const targetCell = dynamicCells.get(String(cargoLabel)) || worldToGrid(targetPos.x, targetPos.z)
+        const targetId = Number(cargoLabel)
+        const blockerIds = getBlockersAtCell(targetCell, dynamicCells, targetId).map(b => String(b.id)).slice(0, 4)
         blockerIds.forEach((id) => {
           const cell = dynamicCells.get(id)
           if (!cell) return
@@ -518,7 +602,7 @@ export default {
         })
       })
 
-      for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
         const frame = animationLegs.value[i]
         frame?.moves?.forEach((move) => {
           const from = center(move.from)
@@ -566,6 +650,7 @@ export default {
     }
 
     const handleOptimizeAllOrders = async () => {
+      await fetchCargoLayout()
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
       if (result) { batchOptimizationResult.value = result; selectedPreview.value = result.results?.[0] || null }
     }
@@ -594,7 +679,7 @@ export default {
 
     return {
       selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
-      animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
+      animationLegs, animationTruncated, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef, MAX_ANIMATION_FRAMES,
       handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
@@ -616,6 +701,7 @@ export default {
 .btn-success { background: #10b981; } .btn-preview { background: #0ea5e9; } .btn-apply { background: #8b5cf6; } .btn-primary { background: #3b82f6; }
 .error-message { color: #dc2626; margin-top: 8px; }
 .sim-caption, .sim-status { font-size: 13px; color: #64748b; }
+.sim-warning { font-size: 13px; color: #b45309; margin-top: 6px; }
 .sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
 .batch-sequences { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
 .seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
