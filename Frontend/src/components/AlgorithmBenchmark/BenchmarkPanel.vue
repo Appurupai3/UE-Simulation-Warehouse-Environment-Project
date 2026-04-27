@@ -81,18 +81,32 @@ export default {
       { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 } },
       { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } }
     ]
+    const clampGridCell = (col, row) => ({
+      col: Math.max(0, Math.min(GRID_COLS - 1, Math.round(col))),
+      row: Math.max(0, Math.min(GRID_ROWS - 1, Math.round(row)))
+    })
     const oneBasedToGridCell = (cell) => {
       const x = Number(cell?.x)
       const y = Number(cell?.y)
       const safeCol = Number.isFinite(x) ? x - 1 : 0
       const safeRow = Number.isFinite(y) ? y - 1 : 0
-      return {
-        col: Math.max(0, Math.min(GRID_COLS - 1, safeCol)),
-        row: Math.max(0, Math.min(GRID_ROWS - 1, safeRow))
+      return clampGridCell(safeCol, safeRow)
+    }
+    const normalizeStartCell = (cell) => {
+      if (!cell) return null
+      if (Number.isFinite(Number(cell.x)) || Number.isFinite(Number(cell.y))) {
+        return oneBasedToGridCell(cell)
       }
+      const col = Number(cell.col)
+      const row = Number(cell.row)
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        return clampGridCell(col, row)
+      }
+      return null
     }
     const getCarHomeCell = (config) => {
-      if (config?.startCell) return oneBasedToGridCell(config.startCell)
+      const normalizedStart = normalizeStartCell(config?.startCell)
+      if (normalizedStart) return normalizedStart
       const dock = DOCK_CELLS[config?.dockIndex] || DOCK_CELLS[0]
       return { col: dock.col, row: Math.min(GRID_ROWS - 1, dock.row + 1) }
     }
