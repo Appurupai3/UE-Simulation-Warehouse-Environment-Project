@@ -1,38 +1,37 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-    <div class="flex justify-between items-center">
+  <div class="ds-card rounded-3xl p-6 lg:p-8">
+    <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <h1 class="text-3xl font-bold text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-          倉儲訂單系統
-        </h1>
-        <p class="text-center text-gray-600 mt-2">Order Management System</p>
+        <div class="section-label mb-3">
+          <span class="section-label__dot" />
+          <span class="section-label__text">Control Center</span>
+        </div>
+        <h2 class="font-[Calistoga] text-3xl text-slate-900 md:text-4xl">
+          倉儲作業 <span class="gradient-text">控制台</span>
+        </h2>
+        <p class="mt-2 text-sm text-slate-500 md:text-base">Order Management System</p>
       </div>
 
-      <div class="flex items-center space-x-4">
-        <div class="flex items-center space-x-2">
-          <div class="w-3 h-3 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
-          <span class="text-sm font-medium" :class="isConnected ? 'text-green-600' : 'text-red-600'">
-            {{ isConnected ? '已連線' : '未連線' }}
-          </span>
+      <div class="flex flex-wrap items-center gap-3">
+        <div
+          class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium"
+          :class="isConnected ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'"
+        >
+          <span class="h-2 w-2 rounded-full" :class="isConnected ? 'bg-emerald-500' : 'bg-rose-500'" />
+          {{ isConnected ? '已連線' : '未連線' }}
         </div>
-        <button
-          @click="$emit('open-three')"
-          class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all duration-300 font-medium flex items-center gap-2"
-        >
-          <span>🎮</span>
-          開啟 3D 場景頁面
+
+        <button @click="$emit('open-three')" class="ds-btn ds-btn--secondary">
+          🎮 3D 場景
         </button>
-        <button
-          @click="$emit('open-benchmark')"
-          class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all duration-300 font-medium flex items-center gap-2"
-        >
-          <span>📊</span>
-          演算法 Benchmark
+
+        <button @click="$emit('open-benchmark')" class="ds-btn ds-btn--secondary">
+          📊 Benchmark
         </button>
+
         <button
           @click="$emit('toggle-connection')"
-          :class="isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'"
-          class="px-4 py-2 text-white rounded-lg transition-all duration-300 font-medium"
+          :class="isConnected ? 'ds-btn ds-btn--danger' : 'ds-btn ds-btn--primary'"
         >
           {{ isConnected ? '斷開連線' : '連線後端' }}
         </button>
@@ -41,7 +40,7 @@
 
     <div
       v-if="errorMessage"
-      class="mt-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-lg"
+      class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
     >
       {{ errorMessage }}
     </div>

@@ -1,6 +1,38 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
-    <div class="max-w-7xl mx-auto">
+  <div class="minimalist-shell">
+    <div class="mx-auto max-w-6xl space-y-8">
+      <section class="ds-card relative overflow-hidden px-6 py-10 lg:px-10 lg:py-14">
+        <div class="absolute -right-20 -top-20 h-52 w-52 rounded-full bg-blue-400/20 blur-3xl" />
+        <div class="grid items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div class="space-y-5">
+            <div class="section-label">
+              <span class="section-label__dot" />
+              <span class="section-label__text">Warehouse Control</span>
+            </div>
+            <h1 class="font-[Calistoga] text-[2.75rem] leading-[1.05] text-slate-900 md:text-6xl lg:text-[5.25rem]">
+              智慧倉儲訂單
+              <span class="gradient-text">即時調度</span>
+            </h1>
+            <p class="max-w-2xl text-base leading-relaxed text-slate-500 md:text-lg">
+              透過一致化設計語彙管理訂單、監控連線、快速切換 3D 場景與 benchmark。
+              整體介面採用 Minimalist Modern 風格，將重點互動集中在高辨識度藍色漸層。
+            </p>
+          </div>
+
+          <div class="relative hidden min-h-[320px] lg:block">
+            <div class="hero-visual-ring absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-blue-300/70" />
+            <div class="hero-floating absolute right-8 top-8 w-44 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+              <p class="text-xs uppercase tracking-[0.15em] text-slate-500">Queue</p>
+              <p class="mt-2 text-3xl font-semibold text-slate-900">{{ orders.length }}</p>
+            </div>
+            <div class="hero-floating hero-floating--alt absolute bottom-8 left-4 w-52 rounded-2xl bg-gradient-to-br from-[#0052FF] to-[#4D7CFF] p-5 text-white shadow-[var(--shadow-accent-lg)]">
+              <p class="text-xs uppercase tracking-[0.15em] text-blue-100">Preview</p>
+              <p class="mt-3 font-mono text-lg">{{ orderPreview }}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <HeaderControls
         :is-connected="isConnected"
         :error-message="errorMessage"
@@ -9,7 +41,28 @@
         @toggle-connection="toggleConnection"
       />
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <section class="inverted-panel ds-card rounded-3xl px-6 py-6 lg:px-10">
+        <div class="relative z-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p class="text-xs uppercase tracking-[0.16em] text-blue-200">Connection</p>
+            <p class="mt-2 text-3xl font-semibold">{{ isConnected ? 'Online' : 'Offline' }}</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.16em] text-blue-200">Orders</p>
+            <p class="mt-2 text-3xl font-semibold">{{ orders.length }}</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.16em] text-blue-200">Input Count</p>
+            <p class="mt-2 text-3xl font-semibold">{{ numbers.length }}</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.16em] text-blue-200">Ready State</p>
+            <p class="mt-2 text-3xl font-semibold">{{ numbers.length > 0 ? 'Ready' : 'Idle' }}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <OrderList
           :orders="orders"
           @clear-orders="handleClearOrders"
@@ -29,7 +82,7 @@
           @apply-code="handleApplyCode"
           @submit-order="submitOrder"
         />
-      </div>
+      </section>
     </div>
   </div>
 </template>
@@ -130,13 +183,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-input[type="number"] {
+input[type='number'] {
   -moz-appearance: textfield;
 }
 
@@ -145,16 +198,16 @@ input[type="number"] {
 }
 
 .overflow-y-auto::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: rgba(148, 163, 184, 0.18);
   border-radius: 10px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #888;
+  background: rgba(51, 65, 85, 0.45);
   border-radius: 10px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: rgba(15, 23, 42, 0.75);
 }
 </style>

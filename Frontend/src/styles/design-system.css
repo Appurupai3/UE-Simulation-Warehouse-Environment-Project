@@ -1,0 +1,206 @@
+@import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --background: #fafafa;
+  --foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #0052ff;
+  --accent-secondary: #4d7cff;
+  --accent-foreground: #ffffff;
+  --border: #e2e8f0;
+  --card: #ffffff;
+  --ring: #0052ff;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+  --shadow-accent: 0 4px 14px rgba(0, 82, 255, 0.25);
+  --shadow-accent-lg: 0 8px 24px rgba(0, 82, 255, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--foreground);
+  background: radial-gradient(circle at top right, rgba(77, 124, 255, 0.12), transparent 50%),
+    radial-gradient(circle at bottom left, rgba(0, 82, 255, 0.08), transparent 55%),
+    var(--background);
+}
+
+.minimalist-shell {
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 82, 255, 0.25);
+  background: rgba(0, 82, 255, 0.05);
+  padding: 0.5rem 1rem;
+}
+
+.section-label__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: pulse-dot 2s infinite;
+}
+
+.section-label__text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.ds-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.ds-btn {
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  height: 3rem;
+  padding: 0 1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease-out;
+  cursor: pointer;
+}
+
+.ds-btn:focus-visible,
+.ds-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring), 0 0 0 4px rgba(250, 250, 250, 1);
+}
+
+.ds-btn--primary {
+  color: var(--accent-foreground);
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-btn--primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: var(--shadow-accent-lg);
+}
+
+.ds-btn--secondary {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.ds-btn--secondary:hover:not(:disabled) {
+  border-color: rgba(0, 82, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.ds-btn--danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.ds-btn--danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: #dc2626;
+}
+
+.ds-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ds-input {
+  height: 3rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(241, 245, 249, 0.3);
+  padding: 0 0.875rem;
+  font-size: 0.95rem;
+}
+
+.gradient-text {
+  background: linear-gradient(to right, var(--accent), var(--accent-secondary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.inverted-panel {
+  position: relative;
+  overflow: hidden;
+  background: var(--foreground);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.inverted-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.32) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+@keyframes ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+.hero-visual-ring {
+  animation: ring-spin 60s linear infinite;
+}
+
+.hero-floating {
+  animation: bob 5s ease-in-out infinite;
+}
+
+.hero-floating--alt {
+  animation-duration: 4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-visual-ring,
+  .hero-floating,
+  .hero-floating--alt,
+  .section-label__dot {
+    animation: none;
+  }
+
+  .ds-btn,
+  .ds-input {
+    transition: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .minimalist-shell {
+    padding: 1rem;
+  }
+}
