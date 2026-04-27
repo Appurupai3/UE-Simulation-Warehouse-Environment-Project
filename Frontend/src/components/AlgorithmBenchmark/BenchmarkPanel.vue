@@ -619,12 +619,44 @@ export default {
       const positions = currentFrame?.carPositions || Object.fromEntries(
         CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }])
       )
+      const carryingByCar = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, null]))
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          if (!move?.carId) return
+          if (move.carryId !== null && move.carryId !== undefined && String(move.carryId) !== '') {
+            carryingByCar[move.carId] = String(move.carryId)
+            return
+          }
+          if (move.type === 'pickup' || move.type === 'clear') carryingByCar[move.carId] = null
+        })
+      }
+
       CAR_CONFIGS.forEach((config, index) => {
         const carCell = positions[config.id]
         if (!carCell) return
         const to = center(carCell)
         ctx.fillStyle = config.color
         ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+
+        const carryingCargoId = carryingByCar[config.id]
+        if (carryingCargoId) {
+          const labelText = `貨 ${carryingCargoId}`
+          ctx.font = 'bold 11px sans-serif'
+          const textWidth = ctx.measureText(labelText).width
+          const badgeWidth = textWidth + 10
+          const badgeHeight = 16
+          const badgeX = to.x - badgeWidth / 2
+          const badgeY = to.y - 28
+          ctx.fillStyle = 'rgba(15,23,42,0.9)'
+          ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
+          ctx.strokeStyle = '#f8fafc'
+          ctx.lineWidth = 1
+          ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight)
+          ctx.fillStyle = '#fef08a'
+          ctx.fillText(labelText, badgeX + 5, badgeY + 11)
+        }
+
         ctx.fillStyle = '#fef08a'
         ctx.font = '12px sans-serif'
         ctx.fillText(config.label, to.x + 8, to.y - 10 + index * 12)
