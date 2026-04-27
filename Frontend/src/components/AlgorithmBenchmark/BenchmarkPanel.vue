@@ -690,23 +690,27 @@ export default {
 </script>
 
 <style scoped>
-.benchmark-panel { padding: 20px; background: #f8f9fa; border-radius: 8px; height: 100%; overflow-y: auto; }
-.input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.benchmark-panel { padding: 20px; background: #f3f4f6; border-radius: 8px; height: 100%; overflow-y: auto; }
+.panel-header h2 { margin: 0 0 12px; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+.input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border-radius: 8px; padding: 12px; }
 .form-group { margin-bottom: 12px; }
 .algorithm-checkboxes { display: flex; gap: 10px; flex-wrap: wrap; }
+.checkbox-label { background: #f3f4f6; padding: 8px 10px; border-radius: 6px; font-weight: 500; }
 .result-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
 .left-list { display: flex; flex-direction: column; gap: 10px; }
-.algorithm-header { display: flex; justify-content: space-between; align-items: center; }
-.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #475569; }
-.actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; }
-.btn { padding: 8px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; }
-.btn-success { background: #10b981; } .btn-preview { background: #0ea5e9; } .btn-apply { background: #8b5cf6; } .btn-primary { background: #3b82f6; }
-.error-message { color: #dc2626; margin-top: 8px; }
-.sim-caption, .sim-status { font-size: 13px; color: #64748b; }
-.sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
-.batch-sequences { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+.algorithm-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #374151; }
+.actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn { padding: 10px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; transition: transform .2s, background-color .2s; }
+.btn:hover { transform: scale(1.03); }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.btn-success { background: #10b981; } .btn-preview { background: #f59e0b; } .btn-apply { background: #111827; } .btn-primary { background: #3b82f6; }
+.error-message { color: #dc2626; margin-top: 8px; font-weight: 600; }
+.sim-caption, .sim-status { font-size: 13px; color: #4b5563; }
+.sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; }
+.batch-sequences { margin-top: 8px; border-top: 2px solid #e5e7eb; padding-top: 6px; }
 .seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
-.state-log { margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
+.state-log { margin-top: 8px; background: #f8fafc; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
 .log-row { font-size: 12px; color: #475569; margin-bottom: 4px; }
 @media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>

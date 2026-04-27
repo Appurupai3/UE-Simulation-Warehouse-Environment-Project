@@ -1,64 +1,48 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-    <div class="flex justify-between items-center">
+  <div class="relative mb-6 overflow-hidden rounded-lg bg-blue-500 p-6 text-white">
+    <div class="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10"></div>
+    <div class="absolute -bottom-16 right-24 h-28 w-28 rotate-12 bg-white/10"></div>
+
+    <div class="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
       <div>
-        <h1 class="text-3xl font-bold text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-          倉儲訂單系統
-        </h1>
-        <p class="text-center text-gray-600 mt-2">Order Management System</p>
+        <h1 class="text-3xl font-extrabold tracking-[-0.02em]">倉儲訂單系統</h1>
+        <p class="mt-1 text-sm font-medium tracking-wide text-blue-100">ORDER MANAGEMENT SYSTEM</p>
       </div>
 
-      <div class="flex items-center space-x-4">
-        <div class="flex items-center space-x-2">
-          <div class="w-3 h-3 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
-          <span class="text-sm font-medium" :class="isConnected ? 'text-green-600' : 'text-red-600'">
-            {{ isConnected ? '已連線' : '未連線' }}
-          </span>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 rounded-md bg-white/15 px-3 py-2">
+          <div class="h-3 w-3 rounded-full" :class="isConnected ? 'bg-emerald-400' : 'bg-amber-400'"></div>
+          <span class="text-sm font-semibold">{{ isConnected ? '已連線' : '未連線' }}</span>
         </div>
+
         <button
           @click="$emit('open-three')"
-          class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all duration-300 font-medium flex items-center gap-2"
-        >
-          <span>🎮</span>
-          開啟 3D 場景頁面
-        </button>
+          class="flat-focus h-12 rounded-md bg-white px-4 text-sm font-semibold text-blue-600 transition-all duration-200 hover:scale-105 hover:bg-blue-50"
+        >🎮 3D 場景</button>
+
         <button
           @click="$emit('open-benchmark')"
-          class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all duration-300 font-medium flex items-center gap-2"
-        >
-          <span>📊</span>
-          演算法 Benchmark
-        </button>
+          class="flat-focus h-12 rounded-md bg-amber-500 px-4 text-sm font-semibold text-white transition-all duration-200 hover:scale-105 hover:bg-amber-600"
+        >📊 Benchmark</button>
+
         <button
           @click="$emit('toggle-connection')"
-          :class="isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'"
-          class="px-4 py-2 text-white rounded-lg transition-all duration-300 font-medium"
-        >
-          {{ isConnected ? '斷開連線' : '連線後端' }}
-        </button>
+          :class="isConnected ? 'bg-gray-900 hover:bg-gray-800' : 'bg-emerald-500 hover:bg-emerald-600'"
+          class="flat-focus h-12 rounded-md px-4 text-sm font-semibold text-white transition-all duration-200 hover:scale-105"
+        >{{ isConnected ? '斷開連線' : '連線後端' }}</button>
       </div>
     </div>
 
-    <div
-      v-if="errorMessage"
-      class="mt-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-lg"
-    >
+    <p v-if="errorMessage" class="relative mt-4 rounded-md bg-white px-4 py-3 text-sm font-medium text-red-600">
       {{ errorMessage }}
-    </div>
+    </p>
   </div>
 </template>
 
 <script setup>
 const { isConnected, errorMessage } = defineProps({
-  isConnected: {
-    type: Boolean,
-    required: true
-  },
-  errorMessage: {
-    type: String,
-    default: ''
-  }
+  isConnected: { type: Boolean, required: true },
+  errorMessage: { type: String, default: '' }
 })
-
 defineEmits(['open-three', 'toggle-connection', 'open-benchmark'])
 </script>

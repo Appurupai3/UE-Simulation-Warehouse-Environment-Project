@@ -1,12 +1,12 @@
 <template>
-  <div class="bg-white/10 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-xl space-y-4">
+  <div class="rounded-lg bg-gray-800 p-4 space-y-4">
     <div>
       <h2 class="text-lg font-semibold">功能列表</h2>
       <p class="text-xs text-white/60">常用操作與完成紀錄</p>
     </div>
 
     <button
-      class="w-full px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-amber-500/80 hover:bg-amber-400 text-white"
+      class="w-full px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-amber-500 hover:bg-amber-600 text-white"
       @click="$emit('reset-warehouse')"
     >
       🔄 重製倉庫
@@ -20,7 +20,7 @@
       <div
         v-for="order in completedOrders"
         :key="order.id"
-        class="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
+        class="rounded-md bg-gray-700 px-3 py-2 text-sm"
       >
         <div class="flex items-center justify-between">
           <span>訂單 {{ order.id }}</span>

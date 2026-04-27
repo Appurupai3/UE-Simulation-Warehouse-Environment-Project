@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white/10 backdrop-blur rounded-2xl shadow-2xl p-4 border border-white/10 space-y-4">
+  <div class="rounded-lg bg-gray-800 p-4 space-y-4">
     <ThreeScene ref="threeSceneRef" />
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
       <OrderExecutionPanel
