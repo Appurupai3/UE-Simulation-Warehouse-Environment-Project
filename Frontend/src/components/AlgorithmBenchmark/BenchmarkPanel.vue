@@ -81,6 +81,11 @@ export default {
       { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { col: 0, row: 1 } },
       { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { col: 3, row: 1 } }
     ]
+    const getCarHomeCell = (config) => {
+      if (config?.startCell) return { ...config.startCell }
+      const dock = DOCK_CELLS[config?.dockIndex] || DOCK_CELLS[0]
+      return { col: dock.col, row: Math.min(GRID_ROWS - 1, dock.row + 1) }
+    }
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
@@ -399,7 +404,7 @@ export default {
 
       const buildPrioritizedPlan = (config, queue, reservations) => {
         const plan = []
-        let current = { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }
+        let current = getCarHomeCell(config)
         let pointer = 0
         let time = 0
         let guard = 0
@@ -455,7 +460,7 @@ export default {
       })
 
       const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
-      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }]))
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
       const frames = []
 
       for (let t = 0; t < maxLen; t++) {
@@ -494,7 +499,7 @@ export default {
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
-          const dock = DOCK_CELLS[carConfig.dockIndex]
+          const dock = getCarHomeCell(carConfig)
           const targetKey = keyOf(target)
           pendingPickupCellCounts.set(targetKey, Math.max(0, (pendingPickupCellCounts.get(targetKey) || 0) - 1))
 
@@ -617,7 +622,7 @@ export default {
       }
 
       const positions = currentFrame?.carPositions || Object.fromEntries(
-        CAR_CONFIGS.map((config) => [config.id, { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }])
+        CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)])
       )
       const carryingByCar = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, null]))
       for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
