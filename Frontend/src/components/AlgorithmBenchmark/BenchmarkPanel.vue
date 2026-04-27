@@ -74,12 +74,12 @@ export default {
     const GRID_ROWS = 10
     const GRID_COLS = 5
     const DOCK_CELLS = [
-      { col: 0, row: 1, label: 'X1Y2' },
-      { col: 3, row: 1, label: 'X4Y2' }
+      { col: 0, row: 0, label: 'X1Y1' },
+      { col: 3, row: 0, label: 'X4Y1' }
     ]
     const CAR_CONFIGS = [
-      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0 },
-      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1 }
+      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { col: 0, row: 1 } },
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { col: 3, row: 1 } }
     ]
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
@@ -399,7 +399,7 @@ export default {
 
       const buildPrioritizedPlan = (config, queue, reservations) => {
         const plan = []
-        let current = { ...DOCK_CELLS[config.dockIndex] }
+        let current = { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }
         let pointer = 0
         let time = 0
         let guard = 0
@@ -455,7 +455,7 @@ export default {
       })
 
       const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
-      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }]))
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }]))
       const frames = []
 
       for (let t = 0; t < maxLen; t++) {
@@ -617,7 +617,7 @@ export default {
       }
 
       const positions = currentFrame?.carPositions || Object.fromEntries(
-        CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }])
+        CAR_CONFIGS.map((config) => [config.id, { ...(config.startCell || DOCK_CELLS[config.dockIndex]) }])
       )
       const carryingByCar = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, null]))
       for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
