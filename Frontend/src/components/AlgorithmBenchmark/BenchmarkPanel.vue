@@ -679,7 +679,7 @@ export default {
           const badgeWidth = textWidth + 10
           const badgeHeight = 16
           const badgeX = to.x - badgeWidth / 2
-          const badgeY = to.y - 28
+          const badgeY = to.y - badgeHeight / 2
           ctx.fillStyle = 'rgba(15,23,42,0.9)'
           ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
           ctx.strokeStyle = '#f8fafc'
