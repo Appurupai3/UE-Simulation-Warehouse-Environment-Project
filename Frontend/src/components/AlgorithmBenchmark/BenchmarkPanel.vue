@@ -143,6 +143,7 @@ export default {
           if (move.type === 'wait') return `${move.carLabel}・等待（避碰）`
           if (move.type === 'replan') return `${move.carLabel}・CBS 重規劃移動`
           if (move.type === 'clear') return `${move.carLabel}・批次 ${move.batchNumber} 搬離堆疊物（貨物 ${move.cargoLabel || '?'}）`
+          if (move.type === 'park') return `${move.carLabel}・回到出貨口下方待命`
           return `${move.carLabel}・批次 ${move.batchNumber} ${move.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${move.cargoLabel || '?'}）`
         })
         .join(' ｜ ')
@@ -523,12 +524,13 @@ export default {
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
-          const dock = getCarHomeCell(carConfig)
+          const dock = DOCK_CELLS[carConfig.dockIndex]
+          const home = getCarHomeCell(carConfig)
           const targetKey = keyOf(target)
           pendingPickupCellCounts.set(targetKey, Math.max(0, (pendingPickupCellCounts.get(targetKey) || 0) - 1))
 
           // 1) 先去取貨（不載貨）
-          pushPathLegs(queue, buildSmartGridPath(dock, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
+          pushPathLegs(queue, buildSmartGridPath(home, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
@@ -546,9 +548,10 @@ export default {
             pushPathLegs(queue, buildSmartGridPath(staging, target, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
-          // 3) 最後回到對應出貨口（此段載貨）
+          // 3) 先把貨物送到對應出貨口，再讓車回到出貨口下方一格待命
           pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
+          pushPathLegs(queue, buildSmartGridPath(dock, home, simulationState, activeAlgorithm), batch.batch_number, 'park', '', null, carConfig)
         })
       })
 
@@ -639,7 +642,7 @@ export default {
         frame?.moves?.forEach((move) => {
           const from = center(move.from)
           const to = center(move.to)
-          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : '#34d399')
+          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : (move.type === 'park' ? '#94a3b8' : '#34d399'))
           ctx.lineWidth = 3
           ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
         })
@@ -657,7 +660,7 @@ export default {
             carryingByCar[move.carId] = String(move.carryId)
             return
           }
-          if (move.type === 'pickup' || move.type === 'clear') carryingByCar[move.carId] = null
+          carryingByCar[move.carId] = null
         })
       }
 
