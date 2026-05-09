@@ -20,7 +20,9 @@ A browser-based 3D warehouse simulation for comparing pathfinding algorithms in 
 ```bash
 # Backend
 cd Backend
-pip install -r requirements.txt
+uv venv venv
+source venv/bin/activate
+uv pip install -r requirements.txt
 python3 app/main.py
 
 # Frontend
@@ -56,7 +58,9 @@ For educational and demonstration purposes only.
 ```bash
 # 後端
 cd Backend
-pip install -r requirements.txt
+uv venv venv
+source venv/bin/activate
+uv pip install -r requirements.txt
 python3 app/main.py
 
 # 前端
