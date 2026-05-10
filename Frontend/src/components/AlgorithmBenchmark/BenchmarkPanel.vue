@@ -486,7 +486,7 @@ export default {
 
       const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
       const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
-      const frames = []
+      const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
 
       for (let t = 0; t < maxLen; t++) {
         const moves = []
