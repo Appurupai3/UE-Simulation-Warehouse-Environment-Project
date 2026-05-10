@@ -775,6 +775,8 @@ export default {
         const rectX = mid.x - width / 2
         const rectY = mid.y - height / 2
 
+        ctx.save()
+        ctx.globalAlpha = 0.68
         ctx.fillStyle = config.color
         ctx.strokeStyle = '#fef08a'
         ctx.lineWidth = 2
@@ -783,6 +785,7 @@ export default {
         } else {
           ctx.fillRect(rectX, rectY, width, height); ctx.strokeRect(rectX, rectY, width, height)
         }
+        ctx.restore()
         ctx.fillStyle = '#111827'
         ctx.beginPath(); ctx.arc(head.x, head.y, 4, 0, Math.PI * 2); ctx.fill()
 
