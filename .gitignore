@@ -69,3 +69,4 @@ Backend/data/cargo_data.json
 Backend/data/app_data.json
 Backend/data/app_data.json
 *.kiro
+.DS_Store
