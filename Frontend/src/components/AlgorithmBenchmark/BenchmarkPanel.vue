@@ -74,13 +74,42 @@ export default {
     const GRID_ROWS = 10
     const GRID_COLS = 5
     const DOCK_CELLS = [
-      { col: 0, row: 1, label: 'X1Y2' },
-      { col: 3, row: 1, label: 'X4Y2' }
+      { col: 0, row: 0, label: 'X1Y1' },
+      { col: 3, row: 0, label: 'X4Y1' }
     ]
     const CAR_CONFIGS = [
-      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0 },
-      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1 }
+      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 } },
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } }
     ]
+    const clampGridCell = (col, row) => ({
+      col: Math.max(0, Math.min(GRID_COLS - 1, Math.round(col))),
+      row: Math.max(0, Math.min(GRID_ROWS - 1, Math.round(row)))
+    })
+    const oneBasedToGridCell = (cell) => {
+      const x = Number(cell?.x)
+      const y = Number(cell?.y)
+      const safeCol = Number.isFinite(x) ? x - 1 : 0
+      const safeRow = Number.isFinite(y) ? y - 1 : 0
+      return clampGridCell(safeCol, safeRow)
+    }
+    const normalizeStartCell = (cell) => {
+      if (!cell) return null
+      if (Number.isFinite(Number(cell.x)) || Number.isFinite(Number(cell.y))) {
+        return oneBasedToGridCell(cell)
+      }
+      const col = Number(cell.col)
+      const row = Number(cell.row)
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        return clampGridCell(col, row)
+      }
+      return null
+    }
+    const getCarHomeCell = (config) => {
+      const normalizedStart = normalizeStartCell(config?.startCell)
+      if (normalizedStart) return normalizedStart
+      const dock = DOCK_CELLS[config?.dockIndex] || DOCK_CELLS[0]
+      return { col: dock.col, row: Math.min(GRID_ROWS - 1, dock.row + 1) }
+    }
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
@@ -114,6 +143,7 @@ export default {
           if (move.type === 'wait') return `${move.carLabel}・等待（避碰）`
           if (move.type === 'replan') return `${move.carLabel}・CBS 重規劃移動`
           if (move.type === 'clear') return `${move.carLabel}・批次 ${move.batchNumber} 搬離堆疊物（貨物 ${move.cargoLabel || '?'}）`
+          if (move.type === 'park') return `${move.carLabel}・回到出貨口下方待命`
           return `${move.carLabel}・批次 ${move.batchNumber} ${move.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${move.cargoLabel || '?'}）`
         })
         .join(' ｜ ')
@@ -399,7 +429,7 @@ export default {
 
       const buildPrioritizedPlan = (config, queue, reservations) => {
         const plan = []
-        let current = { ...DOCK_CELLS[config.dockIndex] }
+        let current = getCarHomeCell(config)
         let pointer = 0
         let time = 0
         let guard = 0
@@ -455,8 +485,8 @@ export default {
       })
 
       const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
-      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }]))
-      const frames = []
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
+      const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
 
       for (let t = 0; t < maxLen; t++) {
         const moves = []
@@ -495,11 +525,12 @@ export default {
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
           const dock = DOCK_CELLS[carConfig.dockIndex]
+          const home = getCarHomeCell(carConfig)
           const targetKey = keyOf(target)
           pendingPickupCellCounts.set(targetKey, Math.max(0, (pendingPickupCellCounts.get(targetKey) || 0) - 1))
 
           // 1) 先去取貨（不載貨）
-          pushPathLegs(queue, buildSmartGridPath(dock, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
+          pushPathLegs(queue, buildSmartGridPath(home, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
@@ -517,9 +548,10 @@ export default {
             pushPathLegs(queue, buildSmartGridPath(staging, target, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
-          // 3) 最後回到對應出貨口（此段載貨）
+          // 3) 先把貨物送到對應出貨口，再讓車回到出貨口下方一格待命
           pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
+          pushPathLegs(queue, buildSmartGridPath(dock, home, simulationState, activeAlgorithm), batch.batch_number, 'park', '', null, carConfig)
         })
       })
 
@@ -610,21 +642,53 @@ export default {
         frame?.moves?.forEach((move) => {
           const from = center(move.from)
           const to = center(move.to)
-          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : '#34d399')
+          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : (move.type === 'park' ? '#94a3b8' : '#34d399'))
           ctx.lineWidth = 3
           ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
         })
       }
 
       const positions = currentFrame?.carPositions || Object.fromEntries(
-        CAR_CONFIGS.map((config) => [config.id, { ...DOCK_CELLS[config.dockIndex] }])
+        CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)])
       )
+      const carryingByCar = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, null]))
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          if (!move?.carId) return
+          if (move.carryId !== null && move.carryId !== undefined && String(move.carryId) !== '') {
+            carryingByCar[move.carId] = String(move.carryId)
+            return
+          }
+          carryingByCar[move.carId] = null
+        })
+      }
+
       CAR_CONFIGS.forEach((config, index) => {
         const carCell = positions[config.id]
         if (!carCell) return
         const to = center(carCell)
         ctx.fillStyle = config.color
         ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+
+        const carryingCargoId = carryingByCar[config.id]
+        if (carryingCargoId) {
+          const labelText = `貨 ${carryingCargoId}`
+          ctx.font = 'bold 11px sans-serif'
+          const textWidth = ctx.measureText(labelText).width
+          const badgeWidth = textWidth + 10
+          const badgeHeight = 16
+          const badgeX = to.x - badgeWidth / 2
+          const badgeY = to.y - badgeHeight / 2
+          ctx.fillStyle = 'rgba(15,23,42,0.9)'
+          ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
+          ctx.strokeStyle = '#f8fafc'
+          ctx.lineWidth = 1
+          ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight)
+          ctx.fillStyle = '#fef08a'
+          ctx.fillText(labelText, badgeX + 5, badgeY + 11)
+        }
+
         ctx.fillStyle = '#fef08a'
         ctx.font = '12px sans-serif'
         ctx.fillText(config.label, to.x + 8, to.y - 10 + index * 12)
