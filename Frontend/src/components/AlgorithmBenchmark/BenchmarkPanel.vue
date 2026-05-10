@@ -46,7 +46,7 @@
 
       <div class="right-sim2d">
         <h4>2D 倉庫模擬（10 x 5 網格）</h4>
-        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；方形框：目標貨物與上層堆疊物。</p>
+        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；車體以 2 格足跡規劃與避碰，方形框為目標貨物與上層堆疊物。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
@@ -77,9 +77,11 @@ export default {
       { col: 0, row: 0, label: 'X1Y1' },
       { col: 3, row: 0, label: 'X4Y1' }
     ]
+    const CAR_LENGTH_CELLS = 2
+    const DEFAULT_CAR_DIRECTION = { dc: 0, dr: 1 }
     const CAR_CONFIGS = [
-      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 } },
-      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } }
+      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 }, startDirection: DEFAULT_CAR_DIRECTION },
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 }, startDirection: DEFAULT_CAR_DIRECTION }
     ]
     const clampGridCell = (col, row) => ({
       col: Math.max(0, Math.min(GRID_COLS - 1, Math.round(col))),
@@ -373,54 +375,105 @@ export default {
       return pending
     }
 
-    const buildParallelFrames = (carLegQueues) => {
-      const isCellFree = (reservations, time, cell) => !reservations.vertex.has(`${time}:${keyOf(cell)}`)
-      const isEdgeFree = (reservations, time, from, to) => !reservations.edge.has(`${time}:${keyOf(to)}->${keyOf(from)}`)
-      const addReservation = (reservations, time, from, to) => {
-        reservations.vertex.add(`${time}:${keyOf(to)}`)
-        reservations.edge.add(`${time}:${keyOf(from)}->${keyOf(to)}`)
+    const normalizeDirection = (direction) => {
+      const dc = Number(direction?.dc)
+      const dr = Number(direction?.dr)
+      if (Number.isFinite(dc) && Number.isFinite(dr) && (dc !== 0 || dr !== 0)) {
+        return { dc: Math.sign(dc), dr: Math.sign(dr) }
       }
-      const getNeighbors = (cell) => (
-        [
-          { col: cell.col + 1, row: cell.row },
-          { col: cell.col - 1, row: cell.row },
-          { col: cell.col, row: cell.row + 1 },
-          { col: cell.col, row: cell.row - 1 }
-        ]
-      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
+      return { ...DEFAULT_CAR_DIRECTION }
+    }
 
-      const findPathWithReservations = (startCell, targetCell, startTime, reservations, maxDepth = 48) => {
-        const startKey = `${startTime}:${keyOf(startCell)}`
-        const queue = [{ cell: { ...startCell }, time: startTime }]
+    const getCarHomeState = (config) => ({
+      cell: getCarHomeCell(config),
+      direction: normalizeDirection(config?.startDirection)
+    })
+
+    const getCarFootprint = (cell, direction) => {
+      const normalizedDirection = normalizeDirection(direction)
+      const cells = []
+      for (let i = 0; i < CAR_LENGTH_CELLS; i++) {
+        cells.push({
+          col: cell.col - normalizedDirection.dc * i,
+          row: cell.row - normalizedDirection.dr * i
+        })
+      }
+      return cells
+    }
+
+    const isInsideGrid = (cell) => cell.col >= 0 && cell.col < GRID_COLS && cell.row >= 0 && cell.row < GRID_ROWS
+    const stateKey = (state) => `${state.cell.col}-${state.cell.row}|${state.direction.dc},${state.direction.dr}`
+    const cloneState = (state) => ({ cell: { ...state.cell }, direction: { ...state.direction } })
+
+    const buildParallelFrames = (carLegQueues) => {
+      const footprintKeys = (state) => getCarFootprint(state.cell, state.direction).map(keyOf)
+      const isFootprintInside = (state) => getCarFootprint(state.cell, state.direction).every(isInsideGrid)
+      const isFootprintFree = (reservations, time, state) => (
+        isFootprintInside(state) && footprintKeys(state).every((cellKey) => !reservations.vertex.has(`${time}:${cellKey}`))
+      )
+      const isEdgeFree = (reservations, time, fromState, toState) => {
+        const fromKeys = footprintKeys(fromState)
+        const toKeys = footprintKeys(toState)
+        return fromKeys.every((fromKey) => toKeys.every((toKey) => !reservations.edge.has(`${time}:${toKey}->${fromKey}`)))
+      }
+      const addReservation = (reservations, time, fromState, toState) => {
+        footprintKeys(toState).forEach((cellKey) => reservations.vertex.add(`${time}:${cellKey}`))
+        const fromKeys = footprintKeys(fromState)
+        const toKeys = footprintKeys(toState)
+        fromKeys.forEach((fromKey) => {
+          toKeys.forEach((toKey) => reservations.edge.add(`${time}:${fromKey}->${toKey}`))
+        })
+      }
+      const reserveInitialState = (reservations, state) => {
+        footprintKeys(state).forEach((cellKey) => reservations.vertex.add(`0:${cellKey}`))
+      }
+      const getNextStates = (state) => {
+        const movementOptions = [
+          { dc: 1, dr: 0 },
+          { dc: -1, dr: 0 },
+          { dc: 0, dr: 1 },
+          { dc: 0, dr: -1 }
+        ].map((direction) => ({
+          cell: { col: state.cell.col + direction.dc, row: state.cell.row + direction.dr },
+          direction
+        }))
+        return [{ cell: { ...state.cell }, direction: { ...state.direction } }, ...movementOptions]
+          .filter(isFootprintInside)
+      }
+
+      const findPathWithReservations = (startState, targetCell, startTime, reservations, maxDepth = 80) => {
+        const startKey = `${startTime}:${stateKey(startState)}`
+        const queue = [{ state: cloneState(startState), time: startTime }]
         const visited = new Set([startKey])
         const parents = new Map([[startKey, null]])
 
         while (queue.length) {
           const current = queue.shift()
           if (!current) break
-          if (keyOf(current.cell) === keyOf(targetCell)) {
+          if (keyOf(current.state.cell) === keyOf(targetCell)) {
             const path = []
-            let cursorKey = `${current.time}:${keyOf(current.cell)}`
+            let cursorKey = `${current.time}:${stateKey(current.state)}`
             while (cursorKey) {
-              const [timeText, coordText] = cursorKey.split(':')
+              const [timeText, stateText] = cursorKey.split(':')
+              const [coordText, directionText] = stateText.split('|')
               const [col, row] = coordText.split('-').map(Number)
-              path.push({ col, row, time: Number(timeText) })
+              const [dc, dr] = directionText.split(',').map(Number)
+              path.push({ cell: { col, row }, direction: { dc, dr }, time: Number(timeText) })
               cursorKey = parents.get(cursorKey) || null
             }
             return path.reverse()
           }
 
           if (current.time - startTime >= maxDepth) continue
-          const options = [...getNeighbors(current.cell), { ...current.cell }]
-          options.forEach((nextCell) => {
+          getNextStates(current.state).forEach((nextState) => {
             const nextTime = current.time + 1
-            if (!isCellFree(reservations, nextTime, nextCell)) return
-            if (!isEdgeFree(reservations, nextTime, current.cell, nextCell)) return
-            const nextKey = `${nextTime}:${keyOf(nextCell)}`
+            if (!isFootprintFree(reservations, nextTime, nextState)) return
+            if (!isEdgeFree(reservations, nextTime, current.state, nextState)) return
+            const nextKey = `${nextTime}:${stateKey(nextState)}`
             if (visited.has(nextKey)) return
             visited.add(nextKey)
-            parents.set(nextKey, `${current.time}:${keyOf(current.cell)}`)
-            queue.push({ cell: nextCell, time: nextTime })
+            parents.set(nextKey, `${current.time}:${stateKey(current.state)}`)
+            queue.push({ state: cloneState(nextState), time: nextTime })
           })
         }
 
@@ -429,26 +482,29 @@ export default {
 
       const buildPrioritizedPlan = (config, queue, reservations) => {
         const plan = []
-        let current = getCarHomeCell(config)
+        let currentState = getCarHomeState(config)
         let pointer = 0
         let time = 0
         let guard = 0
+        reserveInitialState(reservations, currentState)
 
         while (pointer < queue.length && guard < 12000) {
           guard += 1
           const leg = queue[pointer]
-          const segmentPath = findPathWithReservations(current, leg.to, time, reservations)
+          const segmentPath = findPathWithReservations(currentState, leg.to, time, reservations)
 
           if (!segmentPath || segmentPath.length < 2) {
             const waitMove = {
               ...leg,
               type: 'wait',
-              from: { ...current },
-              to: { ...current },
+              from: { ...currentState.cell },
+              to: { ...currentState.cell },
+              fromState: cloneState(currentState),
+              toState: cloneState(currentState),
               cargoLabel: ''
             }
             plan.push(waitMove)
-            addReservation(reservations, time + 1, current, current)
+            addReservation(reservations, time + 1, currentState, currentState)
             time += 1
             continue
           }
@@ -456,21 +512,26 @@ export default {
           for (let i = 1; i < segmentPath.length; i++) {
             const prev = segmentPath[i - 1]
             const next = segmentPath[i]
+            const prevState = { cell: { ...prev.cell }, direction: { ...prev.direction } }
+            const nextState = { cell: { ...next.cell }, direction: { ...next.direction } }
             const isFinalStep = i === segmentPath.length - 1
-            const moveType = isFinalStep ? leg.type : (keyOf(prev) === keyOf(next) ? 'wait' : 'replan')
+            const moveType = isFinalStep ? leg.type : (keyOf(prev.cell) === keyOf(next.cell) ? 'wait' : 'replan')
             const move = {
               ...leg,
               type: moveType,
-              from: { col: prev.col, row: prev.row },
-              to: { col: next.col, row: next.row },
+              from: { ...prev.cell },
+              to: { ...next.cell },
+              fromState: cloneState(prevState),
+              toState: cloneState(nextState),
               cargoLabel: moveType === 'wait' ? '' : leg.cargoLabel
             }
             plan.push(move)
-            addReservation(reservations, next.time, move.from, move.to)
+            addReservation(reservations, next.time, prevState, nextState)
           }
 
-          current = { ...leg.to }
-          time = segmentPath[segmentPath.length - 1].time
+          const lastState = segmentPath[segmentPath.length - 1]
+          currentState = { cell: { ...lastState.cell }, direction: { ...lastState.direction } }
+          time = lastState.time
           pointer += 1
         }
 
@@ -485,18 +546,28 @@ export default {
       })
 
       const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
-      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
-      const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
+      const carStates = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeState(config)]))
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, { ...carStates[config.id].cell }]))
+      const frames = [{
+        moves: [],
+        carPositions: JSON.parse(JSON.stringify(carPositions)),
+        carStates: JSON.parse(JSON.stringify(carStates))
+      }]
 
       for (let t = 0; t < maxLen; t++) {
         const moves = []
         CAR_CONFIGS.forEach((config) => {
           const move = plans[config.id]?.[t]
           if (!move) return
-          carPositions[config.id] = { ...move.to }
+          carStates[config.id] = cloneState(move.toState || { cell: move.to, direction: carStates[config.id].direction })
+          carPositions[config.id] = { ...carStates[config.id].cell }
           if (move.type !== 'wait') moves.push(move)
         })
-        frames.push({ moves, carPositions: JSON.parse(JSON.stringify(carPositions)) })
+        frames.push({
+          moves,
+          carPositions: JSON.parse(JSON.stringify(carPositions)),
+          carStates: JSON.parse(JSON.stringify(carStates))
+        })
       }
 
       return frames
@@ -512,6 +583,7 @@ export default {
       const pendingPickupCellCounts = buildPendingPickupCellCounter(selectedPreview.value, worldToGrid)
       const logs = []
       const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
+      logs.unshift(`2D 模擬：車體長度 ${CAR_LENGTH_CELLS} 格，使用足跡感知的時空預約路徑規劃`)
       if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
 
       selectedPreview.value.batches.forEach((batch, batchIndex) => {
@@ -665,11 +737,32 @@ export default {
       }
 
       CAR_CONFIGS.forEach((config, index) => {
-        const carCell = positions[config.id]
+        const carState = currentFrame?.carStates?.[config.id] || getCarHomeState(config)
+        const carCell = positions[config.id] || carState.cell
         if (!carCell) return
-        const to = center(carCell)
+        const footprint = getCarFootprint(carState.cell, carState.direction)
+        const footprintCenters = footprint.map(center)
+        const head = footprintCenters[0]
+        const tail = footprintCenters[footprintCenters.length - 1]
+        const mid = {
+          x: (head.x + tail.x) / 2,
+          y: (head.y + tail.y) / 2
+        }
+        const width = Math.abs(head.x - tail.x) + cellW * 0.58
+        const height = Math.abs(head.y - tail.y) + cellH * 0.58
+        const rectX = mid.x - width / 2
+        const rectY = mid.y - height / 2
+
         ctx.fillStyle = config.color
-        ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#fef08a'
+        ctx.lineWidth = 2
+        if (ctx.roundRect) {
+          ctx.beginPath(); ctx.roundRect(rectX, rectY, width, height, 8); ctx.fill(); ctx.stroke()
+        } else {
+          ctx.fillRect(rectX, rectY, width, height); ctx.strokeRect(rectX, rectY, width, height)
+        }
+        ctx.fillStyle = '#111827'
+        ctx.beginPath(); ctx.arc(head.x, head.y, 4, 0, Math.PI * 2); ctx.fill()
 
         const carryingCargoId = carryingByCar[config.id]
         if (carryingCargoId) {
@@ -678,8 +771,8 @@ export default {
           const textWidth = ctx.measureText(labelText).width
           const badgeWidth = textWidth + 10
           const badgeHeight = 16
-          const badgeX = to.x - badgeWidth / 2
-          const badgeY = to.y - badgeHeight / 2
+          const badgeX = mid.x - badgeWidth / 2
+          const badgeY = mid.y - badgeHeight / 2
           ctx.fillStyle = 'rgba(15,23,42,0.9)'
           ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
           ctx.strokeStyle = '#f8fafc'
@@ -691,7 +784,7 @@ export default {
 
         ctx.fillStyle = '#fef08a'
         ctx.font = '12px sans-serif'
-        ctx.fillText(config.label, to.x + 8, to.y - 10 + index * 12)
+        ctx.fillText(`${config.label}（2格）`, head.x + 8, head.y - 10 + index * 12)
       })
     }
 
