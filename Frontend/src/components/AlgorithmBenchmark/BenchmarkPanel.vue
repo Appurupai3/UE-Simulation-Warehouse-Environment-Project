@@ -408,127 +408,17 @@ export default {
     }
 
     const buildParallelFrames = (carLegQueues, carConfigs = CAR_CONFIGS) => {
-      const isCellFree = (reservations, time, cell) => !reservations.vertex.has(`${time}:${keyOf(cell)}`)
-      const isEdgeFree = (reservations, time, from, to) => !reservations.edge.has(`${time}:${keyOf(to)}->${keyOf(from)}`)
-      const addReservation = (reservations, time, from, to) => {
-        reservations.vertex.add(`${time}:${keyOf(to)}`)
-        reservations.edge.add(`${time}:${keyOf(from)}->${keyOf(to)}`)
-      }
-      const getNeighbors = (cell) => (
-        [
-          { col: cell.col + 1, row: cell.row },
-          { col: cell.col - 1, row: cell.row },
-          { col: cell.col, row: cell.row + 1 },
-          { col: cell.col, row: cell.row - 1 }
-        ]
-      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
-
-      const findPathWithReservations = (startCell, targetCell, startTime, reservations, maxDepth = 48) => {
-        const startKey = `${startTime}:${keyOf(startCell)}`
-        const queue = [{ cell: { ...startCell }, time: startTime }]
-        const visited = new Set([startKey])
-        const parents = new Map([[startKey, null]])
-
-        while (queue.length) {
-          const current = queue.shift()
-          if (!current) break
-          if (keyOf(current.cell) === keyOf(targetCell)) {
-            const path = []
-            let cursorKey = `${current.time}:${keyOf(current.cell)}`
-            while (cursorKey) {
-              const [timeText, coordText] = cursorKey.split(':')
-              const [col, row] = coordText.split('-').map(Number)
-              path.push({ col, row, time: Number(timeText) })
-              cursorKey = parents.get(cursorKey) || null
-            }
-            return path.reverse()
-          }
-
-          if (current.time - startTime >= maxDepth) continue
-          const options = [...getNeighbors(current.cell), { ...current.cell }]
-          options.forEach((nextCell) => {
-            const nextTime = current.time + 1
-            if (!isCellFree(reservations, nextTime, nextCell)) return
-            if (!isEdgeFree(reservations, nextTime, current.cell, nextCell)) return
-            const nextKey = `${nextTime}:${keyOf(nextCell)}`
-            if (visited.has(nextKey)) return
-            visited.add(nextKey)
-            parents.set(nextKey, `${current.time}:${keyOf(current.cell)}`)
-            queue.push({ cell: nextCell, time: nextTime })
-          })
-        }
-
-        return null
-      }
-
-      const buildPrioritizedPlan = (config, queue, reservations) => {
-        const plan = []
-        let current = getCarHomeCell(config)
-        let pointer = 0
-        let time = 0
-        let guard = 0
-
-        while (pointer < queue.length && guard < 12000) {
-          guard += 1
-          const leg = queue[pointer]
-          const segmentPath = findPathWithReservations(current, leg.to, time, reservations)
-
-          if (!segmentPath || segmentPath.length < 2) {
-            const waitMove = {
-              ...leg,
-              type: 'wait',
-              from: { ...current },
-              to: { ...current },
-              cargoLabel: ''
-            }
-            plan.push(waitMove)
-            addReservation(reservations, time + 1, current, current)
-            time += 1
-            continue
-          }
-
-          for (let i = 1; i < segmentPath.length; i++) {
-            const prev = segmentPath[i - 1]
-            const next = segmentPath[i]
-            const isFinalStep = i === segmentPath.length - 1
-            const moveType = isFinalStep ? leg.type : (keyOf(prev) === keyOf(next) ? 'wait' : 'replan')
-            const move = {
-              ...leg,
-              type: moveType,
-              from: { col: prev.col, row: prev.row },
-              to: { col: next.col, row: next.row },
-              cargoLabel: moveType === 'wait' ? '' : leg.cargoLabel
-            }
-            plan.push(move)
-            addReservation(reservations, next.time, move.from, move.to)
-          }
-
-          current = { ...leg.to }
-          time = segmentPath[segmentPath.length - 1].time
-          pointer += 1
-        }
-
-        return plan
-      }
-
-      const priorityOrder = [...carConfigs].sort((a, b) => carLegQueues[a.id].length - carLegQueues[b.id].length)
-      const reservations = { vertex: new Set(), edge: new Set() }
-      const plans = {}
-      priorityOrder.forEach((config) => {
-        plans[config.id] = buildPrioritizedPlan(config, carLegQueues[config.id], reservations)
-      })
-
-      const maxLen = Math.max(...carConfigs.map((config) => plans[config.id]?.length || 0), 0)
+      const maxLen = Math.max(...carConfigs.map((config) => carLegQueues[config.id]?.length || 0), 0)
       const carPositions = Object.fromEntries(carConfigs.map((config) => [config.id, getCarHomeCell(config)]))
       const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
 
       for (let t = 0; t < maxLen; t++) {
         const moves = []
         carConfigs.forEach((config) => {
-          const move = plans[config.id]?.[t]
+          const move = carLegQueues[config.id]?.[t]
           if (!move) return
           carPositions[config.id] = { ...move.to }
-          if (move.type !== 'wait') moves.push(move)
+          moves.push(move)
         })
         frames.push({ moves, carPositions: JSON.parse(JSON.stringify(carPositions)) })
       }
