@@ -252,6 +252,27 @@ class OriginalAlgorithm(BaseAlgorithm):
         return path
 
 
+
+class SequentialAlgorithm(BaseAlgorithm):
+    """順序演算法：依 item id 由小到大排序。"""
+
+    def __init__(self):
+        super().__init__("sequential", AlgorithmType.SEQUENTIAL)
+
+    def calculate_path(self, order_items: List[int], cargo_data: List[Dict]) -> List[int]:
+        return sorted(order_items)
+
+
+class ReverseAlgorithm(BaseAlgorithm):
+    """反向順序演算法：依 item id 由大到小排序。"""
+
+    def __init__(self):
+        super().__init__("reverse", AlgorithmType.REVERSE)
+
+    def calculate_path(self, order_items: List[int], cargo_data: List[Dict]) -> List[int]:
+        return sorted(order_items, reverse=True)
+
+
 class ObstacleAvoidanceAlgorithm(BaseAlgorithm):
     """避障優先演算法：優先選擇阻擋層數較少且距離較近的貨物。"""
 

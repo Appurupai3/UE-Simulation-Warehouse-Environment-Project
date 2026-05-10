@@ -134,6 +134,7 @@ class BatchInfo(BaseModel):
     path: List[int] = Field(..., description="優化後的訪問順序")
     step_count: int = Field(..., description="此批次的步數")
     positions: List[Position3D] = Field(..., description="實際位置序列")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="批次計分與分車中繼資料")
 
 
 class BatchOptimizationResult(BaseModel):
@@ -145,6 +146,7 @@ class BatchOptimizationResult(BaseModel):
     total_steps: int = Field(..., description="所有批次的總步數")
     execution_time_ms: float = Field(..., description="執行時間（毫秒）")
     total_items: int = Field(..., description="總項目數")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="批次計分、輸入政策與模擬成本中繼資料")
 
 
 class BatchOptimizationComparison(BaseModel):
@@ -155,3 +157,4 @@ class BatchOptimizationComparison(BaseModel):
     best_algorithm: str = Field(..., description="最佳演算法")
     best_total_steps: int = Field(..., description="最少總步數")
     timestamp: datetime = Field(..., description="執行時間戳")
+    input_policy: Dict[str, Any] = Field(default_factory=dict, description="輸入訂單合併、去重與計分政策")

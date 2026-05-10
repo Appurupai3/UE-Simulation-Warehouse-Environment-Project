@@ -105,7 +105,8 @@ const startSimulation = async () => {
       },
       body: JSON.stringify({
         algorithms: algorithms.value.map(a => a.name),
-        max_items_per_batch: 20
+        max_items_per_batch: 20,
+        num_vehicles: 2
       })
     })
     

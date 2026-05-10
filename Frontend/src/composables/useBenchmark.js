@@ -86,8 +86,9 @@ export function useBenchmark() {
    * 批次優化所有訂單
    * @param {Array<string>} algorithms - 演算法名稱列表
    * @param {number} maxItemsPerBatch - 每批次最大項目數
+   * @param {number} numVehicles - 可並行作業的車輛數
    */
-  const optimizeAllOrders = async (algorithms = ['original', 'greedy', 'sequential', 'reverse'], maxItemsPerBatch = 20) => {
+  const optimizeAllOrders = async (algorithms = ['original', 'greedy', 'sequential', 'reverse'], maxItemsPerBatch = 20, numVehicles = 2) => {
     loading.value = true
     error.value = null
     
@@ -99,7 +100,8 @@ export function useBenchmark() {
         },
         body: JSON.stringify({
           algorithms,
-          max_items_per_batch: maxItemsPerBatch
+          max_items_per_batch: maxItemsPerBatch,
+          num_vehicles: numVehicles
         }),
       })
       
