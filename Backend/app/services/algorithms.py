@@ -117,6 +117,11 @@ class AStarAlgorithm(BaseAlgorithm):
             return []
         
         item_positions = self._get_item_positions(order_items, cargo_data)
+
+        # A* 狀態數會隨 item 數量階乘成長；批次 benchmark 可能合併多張訂單，
+        # 超過 10 件時改用貪婪後備以避免 API 長時間阻塞。
+        if len(order_items) > 10:
+            return self._greedy_fallback(order_items, cargo_data, item_positions)
         
         # A* 搜尋：找到訪問所有項目的最優路徑
         # 狀態：(當前位置, 已訪問項目集合)

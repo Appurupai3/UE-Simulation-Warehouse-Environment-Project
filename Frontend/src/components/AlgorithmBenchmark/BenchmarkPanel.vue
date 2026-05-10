@@ -14,7 +14,17 @@
           </label>
         </div>
       </div>
-      <button @click="handleOptimizeAllOrders" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-success">{{ loading ? '計算中...' : '重新計算 Benchmark' }}</button>
+      <div class="benchmark-controls">
+        <label class="control-field">
+          車輛數
+          <input type="number" v-model.number="numVehicles" min="1" max="4" />
+        </label>
+        <label class="control-field">
+          每批上限
+          <input type="number" v-model.number="maxItemsPerBatch" min="1" max="50" />
+        </label>
+        <button @click="handleOptimizeAllOrders" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-success">{{ loading ? '計算中...' : '重新計算 Benchmark' }}</button>
+      </div>
     </div>
 
     <div v-if="error" class="error-message">{{ error }}</div>
@@ -23,7 +33,7 @@
       <div class="left-list">
         <div class="best-result">
           <p><strong>最佳演算法:</strong> {{ batchOptimizationResult.best_algorithm }}</p>
-          <p><strong>最少總步數:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
+          <p><strong>最短完成時間:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
         </div>
 
         <div v-for="result in batchOptimizationResult.results" :key="result.algorithm_name" class="algorithm-batch-result">
@@ -31,10 +41,21 @@
             <h4>{{ getAlgorithmLabel(result.algorithm_name) }}</h4>
             <button class="btn btn-preview" @click="selectPreview(result)">看 2D 模擬圖</button>
           </div>
-          <div class="batch-summary"><span>總步數: {{ result.total_steps }}</span><span>批次: {{ result.total_batches }}</span></div>
+          <div class="batch-summary">
+            <span>完成時間: {{ result.total_steps }}</span>
+            <span>總路程: {{ result.total_travel_steps }}</span>
+            <span>車輛: {{ result.vehicle_count }}</span>
+            <span>批次: {{ result.total_batches }}</span>
+            <span>平衡度: {{ Number(result.workload_balance || 0).toFixed(1) }}</span>
+          </div>
+          <div v-if="result.vehicle_routes?.length" class="vehicle-summary">
+            <div v-for="route in result.vehicle_routes" :key="`${result.algorithm_name}-${route.vehicle_id}`" class="vehicle-row">
+              <strong>{{ route.vehicle_id }}:</strong> {{ route.step_count }} 步 / {{ route.batch_count }} 批 ｜ {{ route.items.join(' → ') || '無任務' }}
+            </div>
+          </div>
           <div class="batch-sequences">
             <div v-for="batch in result.batches" :key="`seq-${result.algorithm_name}-${batch.batch_number}`" class="seq-row">
-              <strong>批次 {{ batch.batch_number }}:</strong> {{ batch.items.join(' → ') }}
+              <strong>{{ batch.vehicle_id || 'car-?' }} / 批次 {{ batch.batch_number }}:</strong> {{ batch.items.join(' → ') }}
             </div>
           </div>
           <div class="actions">
@@ -79,7 +100,9 @@ export default {
     ]
     const CAR_CONFIGS = [
       { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 } },
-      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } }
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } },
+      { id: 'car-3', label: '3號車', color: '#38bdf8', dockIndex: 0, startCell: { x: 2, y: 2 } },
+      { id: 'car-4', label: '4號車', color: '#a78bfa', dockIndex: 1, startCell: { x: 5, y: 2 } }
     ]
     const clampGridCell = (col, row) => ({
       col: Math.max(0, Math.min(GRID_COLS - 1, Math.round(col))),
@@ -112,6 +135,8 @@ export default {
     }
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
+    const numVehicles = ref(2)
+    const maxItemsPerBatch = ref(20)
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
@@ -373,7 +398,7 @@ export default {
       return pending
     }
 
-    const buildParallelFrames = (carLegQueues) => {
+    const buildParallelFrames = (carLegQueues, carConfigs = CAR_CONFIGS) => {
       const isCellFree = (reservations, time, cell) => !reservations.vertex.has(`${time}:${keyOf(cell)}`)
       const isEdgeFree = (reservations, time, from, to) => !reservations.edge.has(`${time}:${keyOf(to)}->${keyOf(from)}`)
       const addReservation = (reservations, time, from, to) => {
@@ -477,20 +502,20 @@ export default {
         return plan
       }
 
-      const priorityOrder = [...CAR_CONFIGS].sort((a, b) => carLegQueues[a.id].length - carLegQueues[b.id].length)
+      const priorityOrder = [...carConfigs].sort((a, b) => carLegQueues[a.id].length - carLegQueues[b.id].length)
       const reservations = { vertex: new Set(), edge: new Set() }
       const plans = {}
       priorityOrder.forEach((config) => {
         plans[config.id] = buildPrioritizedPlan(config, carLegQueues[config.id], reservations)
       })
 
-      const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
-      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
+      const maxLen = Math.max(...carConfigs.map((config) => plans[config.id]?.length || 0), 0)
+      const carPositions = Object.fromEntries(carConfigs.map((config) => [config.id, getCarHomeCell(config)]))
       const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
 
       for (let t = 0; t < maxLen; t++) {
         const moves = []
-        CAR_CONFIGS.forEach((config) => {
+        carConfigs.forEach((config) => {
           const move = plans[config.id]?.[t]
           if (!move) return
           carPositions[config.id] = { ...move.to }
@@ -508,14 +533,16 @@ export default {
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
       const initialCargoCells = new Map(simulationState.cargoCells)
-      const carLegQueues = { 'car-1': [], 'car-2': [] }
+      const activeVehicleCount = Math.max(1, Math.min(CAR_CONFIGS.length, Number(selectedPreview.value?.vehicle_count || numVehicles.value || 2)))
+      const activeCarConfigs = CAR_CONFIGS.slice(0, activeVehicleCount)
+      const carLegQueues = Object.fromEntries(activeCarConfigs.map(config => [config.id, []]))
       const pendingPickupCellCounts = buildPendingPickupCellCounter(selectedPreview.value, worldToGrid)
       const logs = []
       const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
       if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
 
       selectedPreview.value.batches.forEach((batch, batchIndex) => {
-        const carConfig = CAR_CONFIGS[batchIndex % CAR_CONFIGS.length]
+        const carConfig = activeCarConfigs.find(config => config.id === batch.vehicle_id) || activeCarConfigs[batchIndex % activeCarConfigs.length]
         const queue = carLegQueues[carConfig.id]
         const positions = batch.positions || []
         positions.forEach((pos, posIndex) => {
@@ -555,7 +582,7 @@ export default {
         })
       })
 
-      animationLegs.value = buildParallelFrames(carLegQueues).slice(0, 4000)
+      animationLegs.value = buildParallelFrames(carLegQueues, activeCarConfigs).slice(0, 4000)
       simulationEvents.value = logs
       previewCargoCells.value = initialCargoCells
       animationIndex.value = 0
@@ -717,7 +744,9 @@ export default {
     }
 
     const handleOptimizeAllOrders = async () => {
-      const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
+      const safeVehicleCount = Math.max(1, Math.min(4, Number(numVehicles.value) || 2))
+      const safeBatchSize = Math.max(1, Number(maxItemsPerBatch.value) || 20)
+      const result = await optimizeAllOrders(selectedAlgorithms.value, safeBatchSize, safeVehicleCount)
       if (result) { batchOptimizationResult.value = result; selectedPreview.value = result.results?.[0] || null }
     }
     const selectPreview = (result) => { selectedPreview.value = result }
@@ -732,7 +761,8 @@ export default {
       localStorage.setItem('benchmark-execution-bridge', JSON.stringify({
         source: 'benchmark', generatedAt: new Date().toISOString(), algorithm: algorithmResult.algorithm_name,
         totalSteps: algorithmResult.total_steps, totalBatches: algorithmResult.total_batches,
-        batches: algorithmResult.batches.map(batch => ({ batchNumber: batch.batch_number, stepCount: batch.step_count, items: batch.items }))
+        vehicleCount: algorithmResult.vehicle_count,
+        batches: algorithmResult.batches.map(batch => ({ batchNumber: batch.batch_number, vehicleId: batch.vehicle_id, stepCount: batch.step_count, items: batch.items }))
       }))
     }
     const applyBatchesToWarehouse = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult) } finally { applyingBatches.value = false } }
@@ -744,7 +774,7 @@ export default {
     fetchCargoLayout()
 
     return {
-      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
+      selectedAlgorithms, availableAlgorithms, numVehicles, maxItemsPerBatch, batchOptimizationResult, applyingBatches, loading, error,
       animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
       handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
@@ -758,12 +788,17 @@ export default {
 .panel-header h2 { margin: 0 0 12px; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
 .input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border-radius: 8px; padding: 12px; }
 .form-group { margin-bottom: 12px; }
+.benchmark-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.control-field { display: flex; flex-direction: column; gap: 4px; font-weight: 700; color: #374151; }
+.control-field input { width: 88px; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; }
 .algorithm-checkboxes { display: flex; gap: 10px; flex-wrap: wrap; }
 .checkbox-label { background: #f3f4f6; padding: 8px 10px; border-radius: 6px; font-weight: 500; }
 .result-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
 .left-list { display: flex; flex-direction: column; gap: 10px; }
 .algorithm-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #374151; }
+.batch-summary { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: #374151; }
+.vehicle-summary { background: #f8fafc; border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 0.85rem; color: #334155; }
+.vehicle-row + .vehicle-row { margin-top: 4px; }
 .actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .btn { padding: 10px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; transition: transform .2s, background-color .2s; }
 .btn:hover { transform: scale(1.03); }

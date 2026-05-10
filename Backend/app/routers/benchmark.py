@@ -135,7 +135,8 @@ async def get_cargo_layout():
 class OptimizeOrdersRequest(BaseModel):
     """批次優化請求"""
     algorithms: List[str] = Field(default=["greedy", "sequential", "reverse"], description="演算法列表")
-    max_items_per_batch: int = Field(default=20, description="每批次最大項目數")
+    max_items_per_batch: int = Field(default=20, ge=1, description="每批次最大項目數")
+    num_vehicles: int = Field(default=2, ge=1, le=8, description="參與批次最佳化的車輛數")
 
 
 @router.post("/optimize-orders", response_model=dict)
@@ -154,7 +155,8 @@ async def optimize_all_orders(request: OptimizeOrdersRequest):
     try:
         result = await benchmark_service.optimize_all_orders(
             algorithm_names=request.algorithms,
-            max_items_per_batch=request.max_items_per_batch
+            max_items_per_batch=request.max_items_per_batch,
+            num_vehicles=request.num_vehicles
         )
         
         return result.model_dump(mode='json')

@@ -134,6 +134,8 @@ class BatchInfo(BaseModel):
     path: List[int] = Field(..., description="優化後的訪問順序")
     step_count: int = Field(..., description="此批次的步數")
     positions: List[Position3D] = Field(..., description="實際位置序列")
+    vehicle_id: Optional[str] = Field(None, description="負責此批次的車輛 ID")
+    source_order_ids: List[int] = Field(default_factory=list, description="此批次涵蓋的來源訂單 ID")
 
 
 class BatchOptimizationResult(BaseModel):
@@ -142,9 +144,13 @@ class BatchOptimizationResult(BaseModel):
     algorithm_type: AlgorithmType = Field(..., description="演算法類型")
     total_batches: int = Field(..., description="總批次數")
     batches: List[BatchInfo] = Field(..., description="批次列表")
-    total_steps: int = Field(..., description="所有批次的總步數")
+    total_steps: int = Field(..., description="多車並行完成時間（makespan）")
     execution_time_ms: float = Field(..., description="執行時間（毫秒）")
     total_items: int = Field(..., description="總項目數")
+    vehicle_count: int = Field(default=1, description="參與最佳化的車輛數")
+    total_travel_steps: int = Field(default=0, description="所有車輛路線成本總和")
+    workload_balance: float = Field(default=0, description="各車完成時間標準差，越小越平均")
+    vehicle_routes: List[Dict[str, Any]] = Field(default_factory=list, description="各車路線與成本摘要")
 
 
 class BatchOptimizationComparison(BaseModel):
