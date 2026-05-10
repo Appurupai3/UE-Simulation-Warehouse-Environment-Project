@@ -46,7 +46,7 @@
 
       <div class="right-sim2d">
         <h4>2D 倉庫模擬（10 x 5 網格）</h4>
-        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；車體以 2 格足跡規劃與避碰，方形框為目標貨物與上層堆疊物。</p>
+        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；車體固定面向單一方向、以 2 格足跡規劃與避碰。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
@@ -433,9 +433,9 @@ export default {
           { dc: -1, dr: 0 },
           { dc: 0, dr: 1 },
           { dc: 0, dr: -1 }
-        ].map((direction) => ({
-          cell: { col: state.cell.col + direction.dc, row: state.cell.row + direction.dr },
-          direction
+        ].map((step) => ({
+          cell: { col: state.cell.col + step.dc, row: state.cell.row + step.dr },
+          direction: { ...state.direction }
         }))
         return [{ cell: { ...state.cell }, direction: { ...state.direction } }, ...movementOptions]
           .filter(isFootprintInside)
@@ -583,7 +583,7 @@ export default {
       const pendingPickupCellCounts = buildPendingPickupCellCounter(selectedPreview.value, worldToGrid)
       const logs = []
       const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
-      logs.unshift(`2D 模擬：車體長度 ${CAR_LENGTH_CELLS} 格，使用足跡感知的時空預約路徑規劃`)
+      logs.unshift(`2D 模擬：車體固定面向單一方向，長度 ${CAR_LENGTH_CELLS} 格，使用足跡感知的時空預約路徑規劃`)
       if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
 
       selectedPreview.value.batches.forEach((batch, batchIndex) => {
@@ -784,7 +784,7 @@ export default {
 
         ctx.fillStyle = '#fef08a'
         ctx.font = '12px sans-serif'
-        ctx.fillText(`${config.label}（2格）`, head.x + 8, head.y - 10 + index * 12)
+        ctx.fillText(`${config.label}（固定朝向・2格）`, head.x + 8, head.y - 10 + index * 12)
       })
     }
 
