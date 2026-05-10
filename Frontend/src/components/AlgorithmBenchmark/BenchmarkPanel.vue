@@ -440,9 +440,25 @@ export default {
         return [{ cell: { ...state.cell }, direction: { ...state.direction } }, ...movementOptions]
           .filter(isFootprintInside)
       }
+      const getReachableTargetKeys = (targetCell, direction) => {
+        const targetKeys = []
+        const normalizedDirection = normalizeDirection(direction)
+        for (let i = 0; i < CAR_LENGTH_CELLS; i++) {
+          const candidateState = {
+            cell: {
+              col: targetCell.col + normalizedDirection.dc * i,
+              row: targetCell.row + normalizedDirection.dr * i
+            },
+            direction: normalizedDirection
+          }
+          if (isFootprintInside(candidateState)) targetKeys.push(keyOf(candidateState.cell))
+        }
+        return targetKeys.length ? new Set(targetKeys) : new Set([keyOf(targetCell)])
+      }
 
       const findPathWithReservations = (startState, targetCell, startTime, reservations, maxDepth = 80) => {
         const startKey = `${startTime}:${stateKey(startState)}`
+        const targetKeys = getReachableTargetKeys(targetCell, startState.direction)
         const queue = [{ state: cloneState(startState), time: startTime }]
         const visited = new Set([startKey])
         const parents = new Map([[startKey, null]])
@@ -450,7 +466,7 @@ export default {
         while (queue.length) {
           const current = queue.shift()
           if (!current) break
-          if (keyOf(current.state.cell) === keyOf(targetCell)) {
+          if (targetKeys.has(keyOf(current.state.cell))) {
             const path = []
             let cursorKey = `${current.time}:${stateKey(current.state)}`
             while (cursorKey) {
@@ -493,7 +509,12 @@ export default {
           const leg = queue[pointer]
           const segmentPath = findPathWithReservations(currentState, leg.to, time, reservations)
 
-          if (!segmentPath || segmentPath.length < 2) {
+          if (segmentPath?.length === 1) {
+            pointer += 1
+            continue
+          }
+
+          if (!segmentPath) {
             const waitMove = {
               ...leg,
               type: 'wait',
@@ -506,6 +527,7 @@ export default {
             plan.push(waitMove)
             addReservation(reservations, time + 1, currentState, currentState)
             time += 1
+            pointer += 1
             continue
           }
 
