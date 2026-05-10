@@ -39,7 +39,7 @@
         <div v-for="result in batchOptimizationResult.results" :key="result.algorithm_name" class="algorithm-batch-result">
           <div class="algorithm-header">
             <h4>{{ getAlgorithmLabel(result.algorithm_name) }}</h4>
-            <button class="btn btn-preview" @click="selectPreview(result)">看 2D 模擬圖</button>
+            <button class="btn btn-preview" @click="selectPreview(result, true)">看 2D 模擬圖</button>
           </div>
           <div class="batch-summary">
             <span>完成時間: {{ result.total_steps }}</span>
@@ -142,6 +142,7 @@ export default {
     const selectedPreview = ref(null)
     const cargoLayout = ref([])
     const simCanvasRef = ref(null)
+    const previewAutoplayRequested = ref(false)
 
     const animationLegs = ref([])
     const animationIndex = ref(0)
@@ -180,13 +181,21 @@ export default {
         if (!response.ok) return
         const data = await response.json()
         cargoLayout.value = data?.cargo || []
+        if (selectedPreview.value) await rebuildPreviewAnimation(false)
       } catch (e) {
         console.warn('載入 cargo-layout 失敗', e)
       }
     }
 
+    const getPreviewPositions = () => (
+      selectedPreview.value?.batches || []
+    ).flatMap(batch => batch?.positions || [])
+
     const getGridMapper = () => {
-      const points = cargoLayout.value.map(c => c?.position).filter(Boolean)
+      const points = [
+        ...cargoLayout.value.map(c => c?.position).filter(Boolean),
+        ...getPreviewPositions().filter(Boolean)
+      ]
       const xLevels = [...new Set(points.map(p => Number(p.x)).filter(Number.isFinite))].sort((a, b) => a - b)
       const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => a - b)
 
@@ -527,8 +536,27 @@ export default {
       return frames
     }
 
+    const getPositionForBatchItem = (batch, posIndex) => {
+      const directPosition = batch.positions?.[posIndex]
+      if (Number.isFinite(Number(directPosition?.x)) && Number.isFinite(Number(directPosition?.z)) && Number.isFinite(Number(directPosition?.y))) {
+        return directPosition
+      }
+      const itemId = Number(batch.items?.[posIndex])
+      if (!Number.isFinite(itemId)) return null
+      const cargoItem = cargoLayout.value.find(item => parseCargoId(item?.id) === itemId)
+      return cargoItem?.position || null
+    }
+
+    const rebuildPreviewAnimation = async (autoplay = false) => {
+      pauseAnimation()
+      buildAnimationLegs()
+      await nextTick()
+      drawCanvas()
+      if (autoplay && animationLegs.value.length > 1) startAnimation()
+    }
+
     const buildAnimationLegs = () => {
-      if (!selectedPreview.value?.batches?.length) { animationLegs.value = []; return }
+      if (!selectedPreview.value?.batches?.length) { animationLegs.value = []; simulationEvents.value = []; return }
 
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
@@ -544,10 +572,12 @@ export default {
       selectedPreview.value.batches.forEach((batch, batchIndex) => {
         const carConfig = activeCarConfigs.find(config => config.id === batch.vehicle_id) || activeCarConfigs[batchIndex % activeCarConfigs.length]
         const queue = carLegQueues[carConfig.id]
-        const positions = batch.positions || []
-        positions.forEach((pos, posIndex) => {
+        const itemCount = Math.max(batch.positions?.length || 0, batch.items?.length || 0)
+        for (let posIndex = 0; posIndex < itemCount; posIndex++) {
+          const pos = getPositionForBatchItem(batch, posIndex)
           if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z)) || !Number.isFinite(Number(pos?.y))) {
-            return
+            logs.unshift(`${carConfig.label} 批次 ${batch.batch_number}: 找不到第 ${posIndex + 1} 個貨物位置`)
+            continue
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
@@ -579,10 +609,11 @@ export default {
           pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
           pushPathLegs(queue, buildSmartGridPath(dock, home, simulationState, activeAlgorithm), batch.batch_number, 'park', '', null, carConfig)
-        })
+        }
       })
 
       animationLegs.value = buildParallelFrames(carLegQueues, activeCarConfigs).slice(0, 4000)
+      if (animationLegs.value.length <= 1) logs.unshift('2D 模擬：沒有可播放路徑，請確認訂單貨物位置或 cargo layout 是否載入')
       simulationEvents.value = logs
       previewCargoCells.value = initialCargoCells
       animationIndex.value = 0
@@ -597,8 +628,16 @@ export default {
     const getCargoPositionByLabel = (cargoLabel) => {
       const targetId = Number(cargoLabel)
       if (!Number.isFinite(targetId)) return null
-      const hit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
-      return hit?.position || null
+      const cargoHit = cargoLayout.value.find((item) => parseCargoId(item?.id) === targetId)
+      if (cargoHit?.position) return cargoHit.position
+
+      for (const batch of selectedPreview.value?.batches || []) {
+        const itemIndex = (batch.items || []).findIndex(item => Number(item) === targetId)
+        if (itemIndex < 0) continue
+        const previewPosition = batch.positions?.[itemIndex]
+        if (previewPosition) return previewPosition
+      }
+      return null
     }
 
     const drawCanvas = () => {
@@ -675,6 +714,14 @@ export default {
         })
       }
 
+      currentFrame?.moves?.forEach((move) => {
+        const from = center(move.from)
+        const to = center(move.to)
+        ctx.strokeStyle = move.carColor || '#fef08a'
+        ctx.lineWidth = 5
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+      })
+
       const positions = currentFrame?.carPositions || Object.fromEntries(
         CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)])
       )
@@ -747,9 +794,20 @@ export default {
       const safeVehicleCount = Math.max(1, Math.min(4, Number(numVehicles.value) || 2))
       const safeBatchSize = Math.max(1, Number(maxItemsPerBatch.value) || 20)
       const result = await optimizeAllOrders(selectedAlgorithms.value, safeBatchSize, safeVehicleCount)
-      if (result) { batchOptimizationResult.value = result; selectedPreview.value = result.results?.[0] || null }
+      if (result) {
+        batchOptimizationResult.value = result
+        await selectPreview(result.results?.[0] || null, false)
+      }
     }
-    const selectPreview = (result) => { selectedPreview.value = result }
+    const selectPreview = async (result, autoplay = false) => {
+      const samePreview = selectedPreview.value === result
+      previewAutoplayRequested.value = autoplay
+      selectedPreview.value = result
+      if (samePreview) {
+        await rebuildPreviewAnimation(autoplay)
+        previewAutoplayRequested.value = false
+      }
+    }
 
     const writeOrdersFromAlgorithm = async (algorithmResult) => {
       await fetch('http://localhost:8000/orders', { method: 'DELETE' })
@@ -768,7 +826,10 @@ export default {
     const applyBatchesToWarehouse = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult) } finally { applyingBatches.value = false } }
     const startSimulationFromBenchmark = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult); window.open('/three.html', '_blank') } finally { applyingBatches.value = false } }
 
-    watch(selectedPreview, async () => { pauseAnimation(); buildAnimationLegs(); await nextTick(); drawCanvas() }, { deep: true })
+    watch(selectedPreview, async () => {
+      await rebuildPreviewAnimation(previewAutoplayRequested.value)
+      previewAutoplayRequested.value = false
+    }, { deep: true })
     watch(animationIndex, drawCanvas)
     onBeforeUnmount(pauseAnimation)
     fetchCargoLayout()
