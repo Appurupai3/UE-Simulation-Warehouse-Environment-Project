@@ -1,11 +1,13 @@
 <template>
-  <div class="algorithm-benchmark-page">
-    <header class="page-header">
-      <h1>演算法 Benchmark 測試</h1>
-      <p class="subtitle">用圖像化方式比較演算法，並直接銜接到 3D 模擬</p>
+  <div class="min-h-screen bg-gray-100 text-gray-900">
+    <header class="bg-blue-500 px-6 py-8 text-white md:px-10">
+      <div class="mx-auto max-w-7xl">
+        <h1 class="text-4xl font-extrabold tracking-[-0.02em]">演算法 Benchmark 測試</h1>
+        <p class="mt-2 text-sm font-medium text-blue-100">用圖像化方式比較演算法，並直接銜接到 3D 模擬</p>
+      </div>
     </header>
 
-    <div class="content-layout">
+    <div class="mx-auto max-w-7xl p-6 md:p-8">
       <BenchmarkPanel />
     </div>
   </div>
@@ -13,46 +15,5 @@
 
 <script>
 import BenchmarkPanel from '../components/AlgorithmBenchmark/BenchmarkPanel.vue'
-
-export default {
-  name: 'AlgorithmBenchmarkPage',
-  components: {
-    BenchmarkPanel
-  }
-}
+export default { name: 'AlgorithmBenchmarkPage', components: { BenchmarkPanel } }
 </script>
-
-<style scoped>
-.algorithm-benchmark-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: #f0f2f5;
-}
-
-.page-header {
-  padding: 24px 32px;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.page-header h1 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-  color: #1a1a1a;
-  font-weight: 600;
-}
-
-.subtitle {
-  margin: 0;
-  color: #666;
-  font-size: 14px;
-}
-
-.content-layout {
-  flex: 1;
-  padding: 20px;
-  overflow: hidden;
-}
-</style>

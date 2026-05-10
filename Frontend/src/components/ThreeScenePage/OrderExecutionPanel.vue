@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white/10 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-xl space-y-4">
+  <div class="rounded-lg bg-gray-800 p-4 space-y-4">
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-lg font-semibold">訂單清單</h2>
@@ -17,7 +17,7 @@
 
     <div
       v-if="benchmarkBridge"
-      class="rounded-lg bg-indigo-500/20 border border-indigo-300/30 px-3 py-2 text-sm text-indigo-100"
+      class="rounded-md bg-blue-500 px-3 py-2 text-sm text-white"
     >
       <p class="font-semibold">Benchmark 銜接模式</p>
       <p>演算法：{{ benchmarkBridge.algorithm }} / 預估總步數：{{ benchmarkBridge.totalSteps }}</p>
@@ -26,7 +26,7 @@
 
     <div
       v-if="executionStatus"
-      class="rounded-lg bg-white/10 px-3 py-2 text-sm text-white/80"
+      class="rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-100"
     >
       {{ executionStatus }}
     </div>
@@ -35,7 +35,7 @@
       <div
         v-for="flow in executionFlows"
         :key="flow.id"
-        class="rounded-lg bg-white/10 px-3 py-2 text-sm text-white/80"
+        class="rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-100"
       >
         {{ flow.carId }}：{{ flow.status }}
       </div>
@@ -49,7 +49,7 @@
       <div
         v-for="order in orders"
         :key="order.id"
-        class="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+        class="rounded-lg bg-gray-700 px-4 py-3 transition-all duration-200 hover:scale-[1.02] hover:bg-gray-600"
       >
         <div class="flex items-center justify-between">
           <span class="text-sm font-semibold">訂單 {{ order.id }}</span>
@@ -92,12 +92,12 @@ defineEmits(['start-execution'])
 
 const buttonClass = computed(() => {
   if (props.orders.length === 0) {
-    return 'bg-white/10 text-white/40 cursor-not-allowed'
+    return 'bg-gray-600 text-gray-300 cursor-not-allowed'
   }
   if (props.isExecuting) {
-    return 'bg-indigo-500/60 text-white cursor-wait'
+    return 'bg-blue-400 text-white cursor-wait'
   }
-  return 'bg-indigo-500 hover:bg-indigo-400 text-white'
+  return 'bg-blue-500 hover:bg-blue-600 text-white'
 })
 
 const buttonLabel = computed(() => {

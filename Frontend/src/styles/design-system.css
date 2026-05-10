@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --bg: #ffffff;
+  --fg: #111827;
+  --primary: #3b82f6;
+  --secondary: #10b981;
+  --accent: #f59e0b;
+  --muted: #f3f4f6;
+  --border: #e5e7eb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button,
+input,
+textarea,
+select { font-family: inherit; }
+
+.flat-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+}

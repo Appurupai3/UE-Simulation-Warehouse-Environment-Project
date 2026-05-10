@@ -1,45 +1,36 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-xl p-6">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-bold text-gray-800">訂單列表</h2>
+  <div class="rounded-lg bg-gray-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-2xl font-bold tracking-[-0.02em] text-gray-900">訂單列表</h2>
       <button
         @click="$emit('clear-orders')"
-        class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-300 text-sm font-medium"
-      >
-        清空
-      </button>
+        class="flat-focus h-11 rounded-md bg-red-500 px-4 text-sm font-semibold text-white transition-all duration-200 hover:scale-105 hover:bg-red-600"
+      >清空</button>
     </div>
 
-    <div class="space-y-3 max-h-[600px] overflow-y-auto">
-      <div
-        v-if="orders.length === 0"
-        class="text-center py-12 text-gray-400"
-      >
-        <p class="text-lg">暫無訂單</p>
-        <p class="text-sm mt-2">請在右側建立新訂單</p>
+    <div class="max-h-[600px] space-y-3 overflow-y-auto pr-1">
+      <div v-if="orders.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500">
+        <p class="text-lg font-semibold">暫無訂單</p>
+        <p class="mt-2 text-sm">請在右側建立新訂單</p>
       </div>
 
       <div
         v-for="order in orders"
         :key="order.id"
-        class="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border-l-4 border-blue-500 hover:shadow-lg transition-all duration-300"
+        class="group cursor-pointer rounded-lg bg-white p-4 transition-all duration-200 hover:scale-[1.02] hover:bg-blue-50"
       >
-        <div class="flex justify-between items-start mb-2">
-          <span class="font-bold text-gray-800">訂單 {{ order.id }}</span>
+        <div class="mb-2 flex items-start justify-between">
+          <span class="font-bold text-gray-900">訂單 {{ order.id }}</span>
           <div class="flex items-center gap-2">
             <span class="text-xs text-gray-500">{{ order.time }}</span>
             <button
               @click="$emit('delete-order', order.id)"
-              class="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-all duration-200"
+              class="flat-focus rounded-md p-1 text-red-500 transition-all duration-200 hover:bg-red-100 hover:text-red-700"
               title="刪除訂單"
-            >
-              🗑️
-            </button>
+            >🗑️</button>
           </div>
         </div>
-        <div class="text-lg font-mono text-blue-700">
-          {{ order.content }}
-        </div>
+        <div class="font-mono text-lg font-bold text-blue-600">{{ order.content }}</div>
       </div>
     </div>
   </div>
@@ -47,11 +38,7 @@
 
 <script setup>
 defineProps({
-  orders: {
-    type: Array,
-    default: () => []
-  }
+  orders: { type: Array, default: () => [] }
 })
-
 defineEmits(['clear-orders', 'delete-order'])
 </script>

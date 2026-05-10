@@ -50,7 +50,9 @@
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
+          <button class="btn btn-apply" @click="stepBackward" :disabled="!animationLegs.length || animationIndex === 0">後退</button>
           <button class="btn btn-apply" @click="pauseAnimation" :disabled="!isAnimating">暫停</button>
+          <button class="btn btn-preview" @click="stepForward" :disabled="!animationLegs.length || animationIndex >= animationLegs.length - 1">前進</button>
           <button class="btn btn-primary" @click="resetAnimation" :disabled="!animationLegs.length">重置</button>
         </div>
         <p v-if="animationLegs.length" class="sim-status">進度：{{ Math.min(animationIndex + 1, animationLegs.length) }} / {{ animationLegs.length }} ｜ {{ currentLegLabel }}</p>
@@ -75,8 +77,41 @@ export default {
       { col: 0, row: 0, label: 'X1Y1' },
       { col: 3, row: 0, label: 'X4Y1' }
     ]
+    const CAR_CONFIGS = [
+      { id: 'car-1', label: '1號車', color: '#f59e0b', dockIndex: 0, startCell: { x: 1, y: 2 } },
+      { id: 'car-2', label: '2號車', color: '#fb7185', dockIndex: 1, startCell: { x: 4, y: 2 } }
+    ]
+    const clampGridCell = (col, row) => ({
+      col: Math.max(0, Math.min(GRID_COLS - 1, Math.round(col))),
+      row: Math.max(0, Math.min(GRID_ROWS - 1, Math.round(row)))
+    })
+    const oneBasedToGridCell = (cell) => {
+      const x = Number(cell?.x)
+      const y = Number(cell?.y)
+      const safeCol = Number.isFinite(x) ? x - 1 : 0
+      const safeRow = Number.isFinite(y) ? y - 1 : 0
+      return clampGridCell(safeCol, safeRow)
+    }
+    const normalizeStartCell = (cell) => {
+      if (!cell) return null
+      if (Number.isFinite(Number(cell.x)) || Number.isFinite(Number(cell.y))) {
+        return oneBasedToGridCell(cell)
+      }
+      const col = Number(cell.col)
+      const row = Number(cell.row)
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        return clampGridCell(col, row)
+      }
+      return null
+    }
+    const getCarHomeCell = (config) => {
+      const normalizedStart = normalizeStartCell(config?.startCell)
+      if (normalizedStart) return normalizedStart
+      const dock = DOCK_CELLS[config?.dockIndex] || DOCK_CELLS[0]
+      return { col: dock.col, row: Math.min(GRID_ROWS - 1, dock.row + 1) }
+    }
 
-    const selectedAlgorithms = ref(['original', 'greedy', 'astar'])
+    const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
@@ -93,17 +128,25 @@ export default {
     const availableAlgorithms = [
       { value: 'original', label: '原始順序（不整理）' },
       { value: 'greedy', label: '貪婪演算法' },
-      { value: 'astar', label: 'A* 演算法' }
+      { value: 'astar', label: 'A* 演算法' },
+      { value: 'obstacle_aware', label: '避障優先演算法' }
     ]
     const { loading, error, optimizeAllOrders } = useBenchmark()
 
     const getAlgorithmLabel = (name) => availableAlgorithms.find(a => a.value === name)?.label || name
 
     const currentLegLabel = computed(() => {
-      const leg = animationLegs.value[animationIndex.value]
-      if (!leg) return '待機'
-      if (leg.type === 'clear') return `批次 ${leg.batchNumber}・搬離堆疊物（貨物 ${leg.cargoLabel || '?'}）`
-      return `批次 ${leg.batchNumber}・${leg.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${leg.cargoLabel || '?'}）`
+      const frame = animationLegs.value[animationIndex.value]
+      if (!frame?.moves?.length) return '待機'
+      return frame.moves
+        .map((move) => {
+          if (move.type === 'wait') return `${move.carLabel}・等待（避碰）`
+          if (move.type === 'replan') return `${move.carLabel}・CBS 重規劃移動`
+          if (move.type === 'clear') return `${move.carLabel}・批次 ${move.batchNumber} 搬離堆疊物（貨物 ${move.cargoLabel || '?'}）`
+          if (move.type === 'park') return `${move.carLabel}・回到出貨口下方待命`
+          return `${move.carLabel}・批次 ${move.batchNumber} ${move.type === 'pickup' ? '去取貨' : '回出貨口'}（貨物 ${move.cargoLabel || '?'}）`
+        })
+        .join(' ｜ ')
     })
 
     const fetchCargoLayout = async () => {
@@ -120,7 +163,7 @@ export default {
     const getGridMapper = () => {
       const points = cargoLayout.value.map(c => c?.position).filter(Boolean)
       const xLevels = [...new Set(points.map(p => Number(p.x)).filter(Number.isFinite))].sort((a, b) => a - b)
-      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => b - a)
+      const zLevels = [...new Set(points.map(p => Number(p.z)).filter(Number.isFinite))].sort((a, b) => a - b)
 
       if (xLevels.length === 0 || zLevels.length === 0) {
         return () => ({ col: DOCK_CELLS[0].col, row: DOCK_CELLS[0].row })
@@ -156,6 +199,67 @@ export default {
       while (col !== to.col) { col += col < to.col ? 1 : -1; path.push({ col, row }) }
       while (row !== to.row) { row += row < to.row ? 1 : -1; path.push({ col, row }) }
       return path
+    }
+
+    const buildSmartGridPath = (from, to, state, algorithmName) => {
+      if (algorithmName !== 'obstacle_aware') return buildGridPath(from, to)
+
+      const startKey = keyOf(from)
+      const goalKey = keyOf(to)
+      const frontier = [{ key: startKey, cost: 0, priority: 0 }]
+      const cameFrom = new Map([[startKey, null]])
+      const costSoFar = new Map([[startKey, 0]])
+
+      const parseKey = (key) => {
+        const [col, row] = key.split('-').map(Number)
+        return { col, row }
+      }
+
+      const neighborsOf = (cell) => (
+        [
+          { col: cell.col + 1, row: cell.row },
+          { col: cell.col - 1, row: cell.row },
+          { col: cell.col, row: cell.row + 1 },
+          { col: cell.col, row: cell.row - 1 }
+        ]
+      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
+
+      const heuristic = (a, b) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row)
+
+      while (frontier.length > 0) {
+        frontier.sort((a, b) => a.priority - b.priority)
+        const current = frontier.shift()
+        if (!current) break
+        if (current.key === goalKey) break
+
+        const currentCell = parseKey(current.key)
+        const currentCost = costSoFar.get(current.key) ?? 0
+
+        neighborsOf(currentCell).forEach((nextCell) => {
+          const nextKey = keyOf(nextCell)
+          const occupied = state?.occupancy?.get(nextKey) || 0
+          const dockPenalty = DOCK_CELLS.some((dock) => dock.col === nextCell.col && dock.row === nextCell.row) && nextKey !== goalKey ? 1.5 : 0
+          const occupiedPenalty = occupied * 0.25
+          const newCost = currentCost + 1 + dockPenalty + occupiedPenalty
+
+          if (!costSoFar.has(nextKey) || newCost < (costSoFar.get(nextKey) ?? Number.POSITIVE_INFINITY)) {
+            costSoFar.set(nextKey, newCost)
+            const priority = newCost + heuristic(nextCell, to)
+            frontier.push({ key: nextKey, cost: newCost, priority })
+            cameFrom.set(nextKey, current.key)
+          }
+        })
+      }
+
+      if (!cameFrom.has(goalKey)) return buildGridPath(from, to)
+
+      const reversedPath = []
+      let cursor = goalKey
+      while (cursor) {
+        reversedPath.push(parseKey(cursor))
+        cursor = cameFrom.get(cursor) || null
+      }
+      return reversedPath.reverse()
     }
 
     const getBlockers = (targetPos) => {
@@ -219,13 +323,14 @@ export default {
       return cells
     }
 
-    const findAvailableStagingCell = (targetCell, state) => {
+    const findAvailableStagingCell = (targetCell, state, protectedCellCounts = new Map()) => {
       const maxDistance = Math.max(GRID_COLS, GRID_ROWS)
       for (let distance = 1; distance <= maxDistance; distance++) {
         const ringCells = getManhattanRingCells(targetCell, distance)
         for (const cell of ringCells) {
           if (DOCK_CELLS.some(d => d.col === cell.col && d.row === cell.row)) continue
           if (cell.row === GRID_ROWS - 1) continue
+          if ((protectedCellCounts.get(keyOf(cell)) || 0) > 0) continue
           const used = state.occupancy.get(keyOf(cell)) || 0
           if (used < state.maxPerCell) return cell
         }
@@ -241,13 +346,160 @@ export default {
     }
 
 
-    const dockForBatch = (batchNumber) => {
-      const index = (Number(batchNumber) - 1) % DOCK_CELLS.length
-      return { col: DOCK_CELLS[index].col, row: DOCK_CELLS[index].row, label: DOCK_CELLS[index].label }
+    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null, carConfig) => {
+      for (let i = 0; i < route.length - 1; i++) {
+        legs.push({
+          batchNumber, type, cargoLabel, carryId,
+          carId: carConfig.id,
+          carLabel: carConfig.label,
+          carColor: carConfig.color,
+          from: route[i], to: route[i + 1]
+        })
+      }
     }
 
-    const pushPathLegs = (legs, route, batchNumber, type, cargoLabel = '', carryId = null) => {
-      for (let i = 0; i < route.length - 1; i++) legs.push({ batchNumber, type, cargoLabel, carryId, from: route[i], to: route[i + 1] })
+    const buildPendingPickupCellCounter = (preview, worldToGrid) => {
+      const pending = new Map()
+      const batches = preview?.batches || []
+      batches.forEach((batch) => {
+        const positions = batch?.positions || []
+        positions.forEach((pos) => {
+          if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z))) return
+          const cell = worldToGrid(pos.x, pos.z)
+          const key = keyOf(cell)
+          pending.set(key, (pending.get(key) || 0) + 1)
+        })
+      })
+      return pending
+    }
+
+    const buildParallelFrames = (carLegQueues) => {
+      const isCellFree = (reservations, time, cell) => !reservations.vertex.has(`${time}:${keyOf(cell)}`)
+      const isEdgeFree = (reservations, time, from, to) => !reservations.edge.has(`${time}:${keyOf(to)}->${keyOf(from)}`)
+      const addReservation = (reservations, time, from, to) => {
+        reservations.vertex.add(`${time}:${keyOf(to)}`)
+        reservations.edge.add(`${time}:${keyOf(from)}->${keyOf(to)}`)
+      }
+      const getNeighbors = (cell) => (
+        [
+          { col: cell.col + 1, row: cell.row },
+          { col: cell.col - 1, row: cell.row },
+          { col: cell.col, row: cell.row + 1 },
+          { col: cell.col, row: cell.row - 1 }
+        ]
+      ).filter((next) => next.col >= 0 && next.col < GRID_COLS && next.row >= 0 && next.row < GRID_ROWS)
+
+      const findPathWithReservations = (startCell, targetCell, startTime, reservations, maxDepth = 48) => {
+        const startKey = `${startTime}:${keyOf(startCell)}`
+        const queue = [{ cell: { ...startCell }, time: startTime }]
+        const visited = new Set([startKey])
+        const parents = new Map([[startKey, null]])
+
+        while (queue.length) {
+          const current = queue.shift()
+          if (!current) break
+          if (keyOf(current.cell) === keyOf(targetCell)) {
+            const path = []
+            let cursorKey = `${current.time}:${keyOf(current.cell)}`
+            while (cursorKey) {
+              const [timeText, coordText] = cursorKey.split(':')
+              const [col, row] = coordText.split('-').map(Number)
+              path.push({ col, row, time: Number(timeText) })
+              cursorKey = parents.get(cursorKey) || null
+            }
+            return path.reverse()
+          }
+
+          if (current.time - startTime >= maxDepth) continue
+          const options = [...getNeighbors(current.cell), { ...current.cell }]
+          options.forEach((nextCell) => {
+            const nextTime = current.time + 1
+            if (!isCellFree(reservations, nextTime, nextCell)) return
+            if (!isEdgeFree(reservations, nextTime, current.cell, nextCell)) return
+            const nextKey = `${nextTime}:${keyOf(nextCell)}`
+            if (visited.has(nextKey)) return
+            visited.add(nextKey)
+            parents.set(nextKey, `${current.time}:${keyOf(current.cell)}`)
+            queue.push({ cell: nextCell, time: nextTime })
+          })
+        }
+
+        return null
+      }
+
+      const buildPrioritizedPlan = (config, queue, reservations) => {
+        const plan = []
+        let current = getCarHomeCell(config)
+        let pointer = 0
+        let time = 0
+        let guard = 0
+
+        while (pointer < queue.length && guard < 12000) {
+          guard += 1
+          const leg = queue[pointer]
+          const segmentPath = findPathWithReservations(current, leg.to, time, reservations)
+
+          if (!segmentPath || segmentPath.length < 2) {
+            const waitMove = {
+              ...leg,
+              type: 'wait',
+              from: { ...current },
+              to: { ...current },
+              cargoLabel: ''
+            }
+            plan.push(waitMove)
+            addReservation(reservations, time + 1, current, current)
+            time += 1
+            continue
+          }
+
+          for (let i = 1; i < segmentPath.length; i++) {
+            const prev = segmentPath[i - 1]
+            const next = segmentPath[i]
+            const isFinalStep = i === segmentPath.length - 1
+            const moveType = isFinalStep ? leg.type : (keyOf(prev) === keyOf(next) ? 'wait' : 'replan')
+            const move = {
+              ...leg,
+              type: moveType,
+              from: { col: prev.col, row: prev.row },
+              to: { col: next.col, row: next.row },
+              cargoLabel: moveType === 'wait' ? '' : leg.cargoLabel
+            }
+            plan.push(move)
+            addReservation(reservations, next.time, move.from, move.to)
+          }
+
+          current = { ...leg.to }
+          time = segmentPath[segmentPath.length - 1].time
+          pointer += 1
+        }
+
+        return plan
+      }
+
+      const priorityOrder = [...CAR_CONFIGS].sort((a, b) => carLegQueues[a.id].length - carLegQueues[b.id].length)
+      const reservations = { vertex: new Set(), edge: new Set() }
+      const plans = {}
+      priorityOrder.forEach((config) => {
+        plans[config.id] = buildPrioritizedPlan(config, carLegQueues[config.id], reservations)
+      })
+
+      const maxLen = Math.max(...CAR_CONFIGS.map((config) => plans[config.id]?.length || 0), 0)
+      const carPositions = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)]))
+      const frames = [{ moves: [], carPositions: JSON.parse(JSON.stringify(carPositions)) }]
+
+      for (let t = 0; t < maxLen; t++) {
+        const moves = []
+        CAR_CONFIGS.forEach((config) => {
+          const move = plans[config.id]?.[t]
+          if (!move) return
+          carPositions[config.id] = { ...move.to }
+          if (move.type !== 'wait') moves.push(move)
+        })
+        frames.push({ moves, carPositions: JSON.parse(JSON.stringify(carPositions)) })
+      }
+
+      return frames
     }
 
     const buildAnimationLegs = () => {
@@ -255,10 +507,16 @@ export default {
 
       const worldToGrid = getGridMapper()
       const simulationState = initSimulationState(worldToGrid)
-      const legs = []
+      const initialCargoCells = new Map(simulationState.cargoCells)
+      const carLegQueues = { 'car-1': [], 'car-2': [] }
+      const pendingPickupCellCounts = buildPendingPickupCellCounter(selectedPreview.value, worldToGrid)
       const logs = []
+      const activeAlgorithm = selectedPreview.value?.algorithm_name || 'original'
+      if (activeAlgorithm === 'obstacle_aware') logs.unshift('2D 模擬：使用避障優先演算法路徑規劃')
 
-      selectedPreview.value.batches.forEach((batch) => {
+      selectedPreview.value.batches.forEach((batch, batchIndex) => {
+        const carConfig = CAR_CONFIGS[batchIndex % CAR_CONFIGS.length]
+        const queue = carLegQueues[carConfig.id]
         const positions = batch.positions || []
         positions.forEach((pos, posIndex) => {
           if (!Number.isFinite(Number(pos?.x)) || !Number.isFinite(Number(pos?.z)) || !Number.isFinite(Number(pos?.y))) {
@@ -266,37 +524,40 @@ export default {
           }
           const cargoLabel = String(batch.items?.[posIndex] ?? '?')
           const target = worldToGrid(pos.x, pos.z)
-          const dock = dockForBatch(batch.batch_number)
+          const dock = DOCK_CELLS[carConfig.dockIndex]
+          const home = getCarHomeCell(carConfig)
+          const targetKey = keyOf(target)
+          pendingPickupCellCounts.set(targetKey, Math.max(0, (pendingPickupCellCounts.get(targetKey) || 0) - 1))
 
           // 1) 先去取貨（不載貨）
-          pushPathLegs(legs, buildGridPath(dock, target), batch.batch_number, 'pickup', cargoLabel)
+          pushPathLegs(queue, buildSmartGridPath(home, target, simulationState, activeAlgorithm), batch.batch_number, 'pickup', cargoLabel, null, carConfig)
 
           // 2) 取貨後、回出貨口前，演示搬離堆疊物（與 3D 相同：距離 1 再距離 2）
           const blockers = getBlockers(pos).slice(0, 4)
           blockers.forEach((blocker, blockerIndex) => {
-            const staging = findAvailableStagingCell(target, simulationState)
+            const staging = findAvailableStagingCell(target, simulationState, pendingPickupCellCounts)
             if (!staging) {
               logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 無可用暫存空間`) 
               return
             }
             const blockerId = String(blocker.id)
-            pushPathLegs(legs, buildGridPath(target, staging), batch.batch_number, 'clear', cargoLabel, blockerId)
+            pushPathLegs(queue, buildSmartGridPath(target, staging, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, blockerId, carConfig)
             moveOccupancy(simulationState, target, staging)
             simulationState.cargoCells.set(blockerId, { ...staging })
-            logs.unshift(`批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
-            pushPathLegs(legs, buildGridPath(staging, target), batch.batch_number, 'clear', cargoLabel)
+            logs.unshift(`${carConfig.label} 批次 ${batch.batch_number} 貨物 ${cargoLabel}: 搬離阻擋物 #${blockerIndex + 1} 到 (${staging.col + 1},${staging.row + 1})`)
+            pushPathLegs(queue, buildSmartGridPath(staging, target, simulationState, activeAlgorithm), batch.batch_number, 'clear', cargoLabel, null, carConfig)
           })
 
-          // 3) 最後回到對應出貨口（此段載貨）
-          pushPathLegs(legs, buildGridPath(target, dock), batch.batch_number, 'return', cargoLabel, cargoLabel)
+          // 3) 先把貨物送到對應出貨口，再讓車回到出貨口下方一格待命
+          pushPathLegs(queue, buildSmartGridPath(target, dock, simulationState, activeAlgorithm), batch.batch_number, 'return', cargoLabel, cargoLabel, carConfig)
           simulationState.cargoCells.set(cargoLabel, { col: dock.col, row: dock.row })
-          if (legs.length > 4000) return
+          pushPathLegs(queue, buildSmartGridPath(dock, home, simulationState, activeAlgorithm), batch.batch_number, 'park', '', null, carConfig)
         })
       })
 
-      animationLegs.value = legs.slice(0, 4000)
+      animationLegs.value = buildParallelFrames(carLegQueues).slice(0, 4000)
       simulationEvents.value = logs
-      previewCargoCells.value = new Map(simulationState.cargoCells)
+      previewCargoCells.value = initialCargoCells
       animationIndex.value = 0
     }
 
@@ -324,21 +585,7 @@ export default {
       const cellH = (h - pad * 2) / GRID_ROWS
       const center = (cell) => ({ x: pad + cell.col * cellW + cellW / 2, y: pad + cell.row * cellH + cellH / 2 })
       const worldToGrid = getGridMapper()
-      const current = animationLegs.value[animationIndex.value]
-
-      const getDisplayCargoLabel = () => {
-        if (!current?.cargoLabel) return null
-        const currentIsAtDock = DOCK_CELLS.some(d => d.col === current.to.col && d.row === current.to.row)
-        if (current.type === 'return' && currentIsAtDock) {
-          for (let i = animationIndex.value + 1; i < animationLegs.value.length; i++) {
-            const nextLeg = animationLegs.value[i]
-            if (nextLeg?.cargoLabel && nextLeg.type === 'pickup') {
-              return String(nextLeg.cargoLabel)
-            }
-          }
-        }
-        return String(current.cargoLabel)
-      }
+      const currentFrame = animationLegs.value[animationIndex.value]
 
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#0f172a'
@@ -357,25 +604,28 @@ export default {
       // 方形標出要取貨與堆疊物，並讓物品隨搬運動態更新位置
       const dynamicCells = new Map(previewCargoCells.value)
       for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
-        const leg = animationLegs.value[i]
-        if (leg?.carryId) {
-          dynamicCells.set(String(leg.carryId), { ...leg.to })
-        }
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          if (move?.carryId) dynamicCells.set(String(move.carryId), { ...move.to })
+        })
       }
 
-      const displayCargoLabel = getDisplayCargoLabel()
-      if (displayCargoLabel) {
-        const targetPos = getCargoPositionByLabel(displayCargoLabel)
-        if (targetPos) {
-          const targetCell = worldToGrid(targetPos.x, targetPos.z)
-          const targetX = pad + targetCell.col * cellW
-          const targetY = pad + targetCell.row * cellH
-          ctx.strokeStyle = '#fbbf24'
-          ctx.lineWidth = 3
-          ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
-        }
+      const activeCargoMoves = (currentFrame?.moves || []).filter((move) => move.cargoLabel)
+      const blockerTargets = []
+      activeCargoMoves.forEach((move) => {
+        const targetPos = getCargoPositionByLabel(move.cargoLabel)
+        if (!targetPos) return
+        blockerTargets.push(targetPos)
+        const highlightedCell = dynamicCells.get(String(move.cargoLabel)) || worldToGrid(targetPos.x, targetPos.z)
+        const targetX = pad + highlightedCell.col * cellW
+        const targetY = pad + highlightedCell.row * cellH
+        ctx.strokeStyle = move.carColor || '#fbbf24'
+        ctx.lineWidth = 3
+        ctx.strokeRect(targetX + 2, targetY + 2, cellW - 4, cellH - 4)
+      })
 
-        const blockerIds = targetPos ? getBlockers(targetPos).map(b => String(b.id)).slice(0, 4) : []
+      blockerTargets.forEach((targetPos) => {
+        const blockerIds = getBlockers(targetPos).map(b => String(b.id)).slice(0, 4)
         blockerIds.forEach((id) => {
           const cell = dynamicCells.get(id)
           if (!cell) return
@@ -385,27 +635,64 @@ export default {
           ctx.lineWidth = 2
           ctx.strokeRect(x + 6, y + 6, cellW - 12, cellH - 12)
         })
-      }
+      })
 
       for (let i = 0; i < animationIndex.value && i < animationLegs.value.length; i++) {
-        const leg = animationLegs.value[i]
-        const from = center(leg.from)
-        const to = center(leg.to)
-        ctx.strokeStyle = leg.type === 'clear' ? '#c084fc' : (leg.type === 'pickup' ? '#60a5fa' : '#34d399')
-        ctx.lineWidth = 3
-        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          const from = center(move.from)
+          const to = center(move.to)
+          ctx.strokeStyle = move.type === 'clear' ? '#c084fc' : (move.type === 'pickup' ? '#60a5fa' : (move.type === 'park' ? '#94a3b8' : '#34d399'))
+          ctx.lineWidth = 3
+          ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke()
+        })
       }
 
-      if (current) {
-        const to = center(current.to)
-        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+      const positions = currentFrame?.carPositions || Object.fromEntries(
+        CAR_CONFIGS.map((config) => [config.id, getCarHomeCell(config)])
+      )
+      const carryingByCar = Object.fromEntries(CAR_CONFIGS.map((config) => [config.id, null]))
+      for (let i = 0; i <= animationIndex.value && i < animationLegs.value.length; i++) {
+        const frame = animationLegs.value[i]
+        frame?.moves?.forEach((move) => {
+          if (!move?.carId) return
+          if (move.carryId !== null && move.carryId !== undefined && String(move.carryId) !== '') {
+            carryingByCar[move.carId] = String(move.carryId)
+            return
+          }
+          carryingByCar[move.carId] = null
+        })
+      }
 
-        if (current.cargoLabel) {
+      CAR_CONFIGS.forEach((config, index) => {
+        const carCell = positions[config.id]
+        if (!carCell) return
+        const to = center(carCell)
+        ctx.fillStyle = config.color
+        ctx.beginPath(); ctx.arc(to.x, to.y, 6, 0, Math.PI * 2); ctx.fill()
+
+        const carryingCargoId = carryingByCar[config.id]
+        if (carryingCargoId) {
+          const labelText = `貨 ${carryingCargoId}`
+          ctx.font = 'bold 11px sans-serif'
+          const textWidth = ctx.measureText(labelText).width
+          const badgeWidth = textWidth + 10
+          const badgeHeight = 16
+          const badgeX = to.x - badgeWidth / 2
+          const badgeY = to.y - badgeHeight / 2
+          ctx.fillStyle = 'rgba(15,23,42,0.9)'
+          ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
+          ctx.strokeStyle = '#f8fafc'
+          ctx.lineWidth = 1
+          ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight)
           ctx.fillStyle = '#fef08a'
-          ctx.font = '12px sans-serif'
-          ctx.fillText(`貨物 ${current.cargoLabel}`, to.x + 8, to.y - 10)
+          ctx.fillText(labelText, badgeX + 5, badgeY + 11)
         }
-      }
+
+        ctx.fillStyle = '#fef08a'
+        ctx.font = '12px sans-serif'
+        ctx.fillText(config.label, to.x + 8, to.y - 10 + index * 12)
+      })
     }
 
     const startAnimation = () => {
@@ -418,6 +705,16 @@ export default {
     }
     const pauseAnimation = () => { if (timer) { clearInterval(timer); timer = null }; isAnimating.value = false }
     const resetAnimation = () => { pauseAnimation(); animationIndex.value = 0; drawCanvas() }
+    const stepForward = () => {
+      if (!animationLegs.value.length) return
+      pauseAnimation()
+      animationIndex.value = Math.min(animationLegs.value.length - 1, animationIndex.value + 1)
+    }
+    const stepBackward = () => {
+      if (!animationLegs.value.length) return
+      pauseAnimation()
+      animationIndex.value = Math.max(0, animationIndex.value - 1)
+    }
 
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
@@ -449,7 +746,7 @@ export default {
     return {
       selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
       animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
-      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation,
+      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
   }
@@ -457,23 +754,27 @@ export default {
 </script>
 
 <style scoped>
-.benchmark-panel { padding: 20px; background: #f8f9fa; border-radius: 8px; height: 100%; overflow-y: auto; }
-.input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.benchmark-panel { padding: 20px; background: #f3f4f6; border-radius: 8px; height: 100%; overflow-y: auto; }
+.panel-header h2 { margin: 0 0 12px; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+.input-section, .best-result, .algorithm-batch-result, .right-sim2d { background: #fff; border-radius: 8px; padding: 12px; }
 .form-group { margin-bottom: 12px; }
 .algorithm-checkboxes { display: flex; gap: 10px; flex-wrap: wrap; }
+.checkbox-label { background: #f3f4f6; padding: 8px 10px; border-radius: 6px; font-weight: 500; }
 .result-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
 .left-list { display: flex; flex-direction: column; gap: 10px; }
-.algorithm-header { display: flex; justify-content: space-between; align-items: center; }
-.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #475569; }
-.actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; }
-.btn { padding: 8px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; }
-.btn-success { background: #10b981; } .btn-preview { background: #0ea5e9; } .btn-apply { background: #8b5cf6; } .btn-primary { background: #3b82f6; }
-.error-message { color: #dc2626; margin-top: 8px; }
-.sim-caption, .sim-status { font-size: 13px; color: #64748b; }
-.sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
-.batch-sequences { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+.algorithm-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.batch-summary { margin-top: 6px; display: flex; gap: 12px; font-size: 13px; color: #374151; }
+.actions, .sim-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn { padding: 10px 12px; border: 0; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; transition: transform .2s, background-color .2s; }
+.btn:hover { transform: scale(1.03); }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.btn-success { background: #10b981; } .btn-preview { background: #f59e0b; } .btn-apply { background: #111827; } .btn-primary { background: #3b82f6; }
+.error-message { color: #dc2626; margin-top: 8px; font-weight: 600; }
+.sim-caption, .sim-status { font-size: 13px; color: #4b5563; }
+.sim-canvas { width: 100%; background: #0f172a; border-radius: 8px; }
+.batch-sequences { margin-top: 8px; border-top: 2px solid #e5e7eb; padding-top: 6px; }
 .seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
-.state-log { margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
+.state-log { margin-top: 8px; background: #f8fafc; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
 .log-row { font-size: 12px; color: #475569; margin-bottom: 4px; }
 @media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>

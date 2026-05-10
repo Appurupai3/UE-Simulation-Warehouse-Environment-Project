@@ -251,3 +251,56 @@ class OriginalAlgorithm(BaseAlgorithm):
         
         return path
 
+
+class ObstacleAvoidanceAlgorithm(BaseAlgorithm):
+    """避障優先演算法：優先選擇阻擋層數較少且距離較近的貨物。"""
+
+    def __init__(self):
+        super().__init__("obstacle_aware", AlgorithmType.OPTIMIZED)
+
+    def _build_blocker_count(self, cargo_data: List[Dict]) -> Dict[int, int]:
+        columns = {}
+        for item in cargo_data:
+            cargo_id_str = str(item["id"])
+            item_id = int(cargo_id_str.replace("case ", "")) if cargo_id_str.startswith("case ") else int(cargo_id_str)
+            pos = item["position"]
+            key = f"{pos['x']:.3f}-{pos['z']:.3f}"
+            columns.setdefault(key, []).append((item_id, float(pos["y"])))
+
+        blocker_count = {}
+        for entries in columns.values():
+            ordered = sorted(entries, key=lambda row: row[1], reverse=True)
+            for idx, (item_id, _) in enumerate(ordered):
+                blocker_count[item_id] = idx
+        return blocker_count
+
+    def calculate_path(self, order_items: List[int], cargo_data: List[Dict]) -> List[int]:
+        if not order_items:
+            return []
+
+        item_positions = self._get_item_positions(order_items, cargo_data)
+        blocker_count = self._build_blocker_count(cargo_data)
+
+        remaining = set(order_items)
+        current_pos = {'x': 0, 'y': 0, 'z': 0}
+        path = []
+
+        while remaining:
+            best_item = None
+            best_score = float("inf")
+
+            for item_id in remaining:
+                pos = item_positions[item_id]
+                distance = self._calculate_distance(current_pos, pos)
+                blockers = blocker_count.get(item_id, 0)
+                score = distance + blockers * 2.5
+
+                if score < best_score:
+                    best_score = score
+                    best_item = item_id
+
+            path.append(best_item)
+            remaining.remove(best_item)
+            current_pos = item_positions[best_item]
+
+        return path
