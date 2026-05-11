@@ -119,6 +119,52 @@ export function useBenchmark() {
     }
   }
 
+
+  /**
+   * 使用 random 產生多局、多任務 Benchmark
+   * @param {Object} config - { algorithms, rounds, tasksPerRound, itemsPerTask, seed }
+   */
+  const runRandomBenchmark = async ({
+    algorithms = ['original', 'greedy', 'astar', 'obstacle_aware'],
+    rounds = 3,
+    tasksPerRound = 4,
+    itemsPerTask = 6,
+    seed = null
+  } = {}) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(`${API_BASE}/benchmark/random`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          algorithms,
+          rounds,
+          tasks_per_round: tasksPerRound,
+          items_per_task: itemsPerTask,
+          seed
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (err) {
+      error.value = `隨機 Benchmark 失敗: ${err.message}`
+      console.error('隨機 Benchmark 失敗:', err)
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+
   return {
     results,
     history,
@@ -126,6 +172,7 @@ export function useBenchmark() {
     error,
     runBenchmark,
     getHistory,
-    optimizeAllOrders
+    optimizeAllOrders,
+    runRandomBenchmark
   }
 }

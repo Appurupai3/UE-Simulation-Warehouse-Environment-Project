@@ -17,6 +17,87 @@
       <button @click="handleOptimizeAllOrders" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-success">{{ loading ? '計算中...' : '重新計算 Benchmark' }}</button>
     </div>
 
+    <div class="random-benchmark-section">
+      <div class="random-header">
+        <div>
+          <h3>隨機多局驗證</h3>
+          <p>一次產生多個 task / 多局，最後比較四個演算法每次任務與平均步數，避免只看手動訂單造成偏差。</p>
+        </div>
+        <button @click="handleRandomBenchmark" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-primary">{{ loading ? '隨機測試中...' : '開始隨機 Benchmark' }}</button>
+      </div>
+
+      <div class="random-controls">
+        <label>局數
+          <input v-model.number="randomConfig.rounds" type="number" min="1" max="100" />
+        </label>
+        <label>每局 Task 數
+          <input v-model.number="randomConfig.tasksPerRound" type="number" min="1" max="50" />
+        </label>
+        <label>每個 Task 貨物數
+          <input v-model.number="randomConfig.itemsPerTask" type="number" min="1" max="230" />
+        </label>
+        <label>Seed（可空白）
+          <input v-model="randomConfig.seed" type="number" placeholder="固定 seed 可重現" />
+        </label>
+      </div>
+
+      <div v-if="randomBenchmarkResult" class="random-results">
+        <div class="best-result random-best">
+          <p><strong>隨機測試最佳平均:</strong> {{ getAlgorithmLabel(randomBenchmarkResult.best_algorithm) }}</p>
+          <p><strong>設定:</strong> {{ randomBenchmarkResult.rounds }} 局 × {{ randomBenchmarkResult.tasks_per_round }} tasks / 每 task {{ randomBenchmarkResult.items_per_task }} 件</p>
+          <p><strong>Seed:</strong> {{ randomBenchmarkResult.seed ?? '未指定' }}</p>
+        </div>
+
+        <div class="summary-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>演算法</th>
+                <th>平均步數</th>
+                <th>總步數</th>
+                <th>最低</th>
+                <th>最高</th>
+                <th>勝出次數</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="summary in sortedRandomSummaries" :key="summary.algorithm_name">
+                <td>{{ getAlgorithmLabel(summary.algorithm_name) }}</td>
+                <td>{{ summary.average_steps.toFixed(2) }}</td>
+                <td>{{ summary.total_steps }}</td>
+                <td>{{ summary.min_steps }}</td>
+                <td>{{ summary.max_steps }}</td>
+                <td>{{ summary.wins }} / {{ summary.total_runs }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="summary-table-wrap task-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>局 / Task</th>
+                <th>Random 訂單</th>
+                <th v-for="algo in randomBenchmarkResult.algorithms" :key="`head-${algo}`">{{ getAlgorithmLabel(algo) }}</th>
+                <th>最佳</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="task in randomBenchmarkResult.tasks" :key="`${task.round_number}-${task.task_number}`">
+                <td>第 {{ task.round_number }} 局 / T{{ task.task_number }}</td>
+                <td class="order-cell">{{ task.order.items.join('-') }}</td>
+                <td v-for="algo in randomBenchmarkResult.algorithms" :key="`${task.round_number}-${task.task_number}-${algo}`">
+                  {{ getTaskStep(task, algo) }}
+                </td>
+                <td>{{ getAlgorithmLabel(task.best_algorithm) }}（{{ task.best_step_count }}）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div v-if="error" class="error-message">{{ error }}</div>
 
     <div v-if="batchOptimizationResult" class="result-split">
@@ -115,6 +196,8 @@ export default {
 
     const selectedAlgorithms = ref(['original', 'greedy', 'astar', 'obstacle_aware'])
     const batchOptimizationResult = ref(null)
+    const randomBenchmarkResult = ref(null)
+    const randomConfig = ref({ rounds: 3, tasksPerRound: 4, itemsPerTask: 6, seed: '' })
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
     const cargoLayout = ref([])
@@ -133,9 +216,19 @@ export default {
       { value: 'astar', label: 'A* 演算法' },
       { value: 'obstacle_aware', label: '避障優先演算法' }
     ]
-    const { loading, error, optimizeAllOrders } = useBenchmark()
+    const { loading, error, optimizeAllOrders, runRandomBenchmark } = useBenchmark()
 
     const getAlgorithmLabel = (name) => availableAlgorithms.find(a => a.value === name)?.label || name
+
+    const sortedRandomSummaries = computed(() => {
+      const summaries = randomBenchmarkResult.value?.summaries || []
+      return [...summaries].sort((a, b) => a.average_steps - b.average_steps)
+    })
+
+    const getTaskStep = (task, algorithmName) => {
+      const result = task?.results?.find(item => item.algorithm_name === algorithmName)
+      return result?.step_count ?? '-'
+    }
 
     const currentLegLabel = computed(() => {
       const frame = animationLegs.value[animationIndex.value]
@@ -831,9 +924,26 @@ export default {
       animationIndex.value = Math.max(0, animationIndex.value - 1)
     }
 
+    const normalizePositiveInt = (value, fallback, min, max) => {
+      const number = Number(value)
+      if (!Number.isFinite(number)) return fallback
+      return Math.max(min, Math.min(max, Math.trunc(number)))
+    }
+
     const handleOptimizeAllOrders = async () => {
       const result = await optimizeAllOrders(selectedAlgorithms.value, 20)
       if (result) { batchOptimizationResult.value = result; selectedPreview.value = result.results?.[0] || null }
+    }
+    const handleRandomBenchmark = async () => {
+      const seedValue = randomConfig.value.seed
+      const result = await runRandomBenchmark({
+        algorithms: selectedAlgorithms.value,
+        rounds: normalizePositiveInt(randomConfig.value.rounds, 3, 1, 100),
+        tasksPerRound: normalizePositiveInt(randomConfig.value.tasksPerRound, 4, 1, 50),
+        itemsPerTask: normalizePositiveInt(randomConfig.value.itemsPerTask, 6, 1, 230),
+        seed: seedValue === '' || seedValue === null ? null : Number(seedValue)
+      })
+      if (result) randomBenchmarkResult.value = result
     }
     const selectPreview = (result) => { selectedPreview.value = result }
 
@@ -859,9 +969,9 @@ export default {
     fetchCargoLayout()
 
     return {
-      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, applyingBatches, loading, error,
+      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, randomBenchmarkResult, randomConfig, sortedRandomSummaries, applyingBatches, loading, error,
       animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
-      handleOptimizeAllOrders, selectPreview, getAlgorithmLabel, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
+      handleOptimizeAllOrders, handleRandomBenchmark, selectPreview, getAlgorithmLabel, getTaskStep, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
   }
@@ -891,5 +1001,22 @@ export default {
 .seq-row { font-size: 12px; color: #334155; margin-bottom: 4px; word-break: break-all; }
 .state-log { margin-top: 8px; background: #f8fafc; border-radius: 6px; padding: 6px; max-height: 120px; overflow-y: auto; }
 .log-row { font-size: 12px; color: #475569; margin-bottom: 4px; }
+.random-benchmark-section { background: #fff; border-radius: 8px; padding: 14px; margin-top: 12px; border: 1px solid #dbeafe; }
+.random-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.random-header h3 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e3a8a; }
+.random-header p { margin: 4px 0 0; color: #475569; font-size: 13px; }
+.random-controls { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+.random-controls label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #334155; }
+.random-controls input { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 14px; }
+.random-results { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.random-best { border-left: 4px solid #3b82f6; }
+.summary-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.task-table-wrap { max-height: 360px; overflow: auto; }
+.benchmark-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+.benchmark-table th, .benchmark-table td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
+.benchmark-table th { background: #eff6ff; color: #1e3a8a; position: sticky; top: 0; z-index: 1; }
+.order-cell { max-width: 220px; word-break: break-all; color: #475569; }
+@media (max-width: 900px) { .random-header { flex-direction: column; } .random-controls { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .random-controls { grid-template-columns: 1fr; } }
 @media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>

@@ -67,6 +67,44 @@ class BenchmarkComparison(BaseModel):
     improvement_percentage: Optional[float] = None  # 相對於基準的改進百分比
 
 
+# ===== 隨機多局 Benchmark 相關模型 =====
+
+
+class RandomBenchmarkTaskResult(BaseModel):
+    """隨機 Benchmark 單一任務結果"""
+    round_number: int = Field(..., description="局數編號")
+    task_number: int = Field(..., description="同一局中的任務編號")
+    order: BenchmarkOrder = Field(..., description="隨機產生的訂單")
+    results: List[AlgorithmResult] = Field(..., description="各演算法在此任務的結果")
+    best_algorithm: str = Field(..., description="此任務最佳演算法")
+    best_step_count: int = Field(..., description="此任務最少步數")
+
+
+class RandomBenchmarkSummary(BaseModel):
+    """隨機 Benchmark 演算法彙總"""
+    algorithm_name: str = Field(..., description="演算法名稱")
+    average_steps: float = Field(..., description="平均步數")
+    min_steps: int = Field(..., description="最少步數")
+    max_steps: int = Field(..., description="最多步數")
+    total_steps: int = Field(..., description="總步數")
+    wins: int = Field(..., description="最佳次數")
+    total_runs: int = Field(..., description="執行任務數")
+
+
+class RandomBenchmarkResult(BaseModel):
+    """隨機多局 Benchmark 結果"""
+    benchmark_id: str = Field(..., description="Benchmark ID")
+    algorithms: List[str] = Field(..., description="比較的演算法")
+    rounds: int = Field(..., description="隨機局數")
+    tasks_per_round: int = Field(..., description="每局任務數")
+    items_per_task: int = Field(..., description="每個任務的項目數")
+    seed: Optional[int] = Field(None, description="隨機種子；提供後可重現結果")
+    tasks: List[RandomBenchmarkTaskResult] = Field(..., description="所有任務明細")
+    summaries: List[RandomBenchmarkSummary] = Field(..., description="演算法彙總")
+    best_algorithm: str = Field(..., description="平均步數最低的演算法")
+    timestamp: datetime = Field(..., description="執行時間戳")
+
+
 # ===== 線上程式碼編輯器相關模型 =====
 
 class AlgorithmTemplate(BaseModel):

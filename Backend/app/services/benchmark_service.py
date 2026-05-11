@@ -1,4 +1,5 @@
 import json
+import random
 import time
 import uuid
 from datetime import datetime, timezone
@@ -7,7 +8,8 @@ from pathlib import Path
 
 from app.models.benchmark import (
     BenchmarkOrder, BenchmarkResult, AlgorithmResult,
-    BenchmarkComparison, Position3D
+    BenchmarkComparison, Position3D, RandomBenchmarkResult,
+    RandomBenchmarkTaskResult, RandomBenchmarkSummary
 )
 from app.services.interfaces import IBenchmarkService
 from app.services.algorithm_registry import algorithm_registry
@@ -142,7 +144,8 @@ class BenchmarkService(IBenchmarkService):
     async def run_benchmark(
         self, 
         order: BenchmarkOrder, 
-        algorithm_names: List[str]
+        algorithm_names: List[str],
+        save_result: bool = True
     ) -> BenchmarkResult:
         """
         執行 benchmark 測試
@@ -150,6 +153,7 @@ class BenchmarkService(IBenchmarkService):
         Args:
             order: 測試訂單
             algorithm_names: 演算法名稱列表
+            save_result: 是否保存到歷史紀錄
             
         Returns:
             Benchmark 結果
@@ -219,7 +223,8 @@ class BenchmarkService(IBenchmarkService):
         )
         
         # 保存結果
-        await self._save_result(benchmark_result)
+        if save_result:
+            await self._save_result(benchmark_result)
         
         # 後置條件檢查
         assert len(results) == len(algorithm_names)
@@ -228,6 +233,113 @@ class BenchmarkService(IBenchmarkService):
         
         return benchmark_result
     
+    def _get_available_cargo_ids(self, cargo_data: List[Dict]) -> List[int]:
+        """取得可用貨物 ID 清單"""
+        cargo_ids: List[int] = []
+        for item in cargo_data:
+            cargo_id_str = str(item['id'])
+            cargo_id = int(cargo_id_str.replace('case ', '')) if cargo_id_str.startswith('case ') else int(cargo_id_str)
+            cargo_ids.append(cargo_id)
+        return sorted(cargo_ids)
+
+    async def run_random_benchmark(
+        self,
+        algorithm_names: List[str],
+        rounds: int = 3,
+        tasks_per_round: int = 4,
+        items_per_task: int = 6,
+        seed: Optional[int] = None
+    ) -> RandomBenchmarkResult:
+        """
+        使用隨機訂單執行多局、多任務 Benchmark。
+
+        每個任務會產生一筆隨機訂單，並對所有指定演算法計算步數，
+        適合用來檢查演算法不是只針對手動輸入訂單表現良好。
+        """
+        if not algorithm_names:
+            raise ValueError("至少需要一個演算法")
+        if rounds < 1:
+            raise ValueError("局數至少需要 1")
+        if tasks_per_round < 1:
+            raise ValueError("每局任務數至少需要 1")
+        if items_per_task < 1:
+            raise ValueError("每個任務的項目數至少需要 1")
+
+        cargo_data = self._load_cargo_data()
+        cargo_ids = self._get_available_cargo_ids(cargo_data)
+        if items_per_task > len(cargo_ids):
+            raise ValueError(f"每個任務項目數不能超過可用貨物數 {len(cargo_ids)}")
+
+        # 先驗證演算法名稱，讓錯誤在產生任務前就被回報。
+        for algo_name in algorithm_names:
+            algorithm_registry.get(algo_name)
+
+        rng = random.Random(seed)
+        task_results: List[RandomBenchmarkTaskResult] = []
+        algorithm_steps: Dict[str, List[int]] = {name: [] for name in algorithm_names}
+        algorithm_wins: Dict[str, int] = {name: 0 for name in algorithm_names}
+
+        for round_number in range(1, rounds + 1):
+            for task_number in range(1, tasks_per_round + 1):
+                items = rng.sample(cargo_ids, items_per_task)
+                order = BenchmarkOrder(
+                    items=items,
+                    content='-'.join(str(item) for item in items)
+                )
+                benchmark_result = await self.run_benchmark(
+                    order=order,
+                    algorithm_names=algorithm_names,
+                    save_result=False
+                )
+
+                for algo_result in benchmark_result.results:
+                    algorithm_steps[algo_result.algorithm_name].append(algo_result.step_count)
+
+                winners = [
+                    result.algorithm_name
+                    for result in benchmark_result.results
+                    if result.step_count == benchmark_result.best_step_count
+                ]
+                for winner in winners:
+                    algorithm_wins[winner] += 1
+
+                task_results.append(RandomBenchmarkTaskResult(
+                    round_number=round_number,
+                    task_number=task_number,
+                    order=order,
+                    results=benchmark_result.results,
+                    best_algorithm=benchmark_result.best_algorithm,
+                    best_step_count=benchmark_result.best_step_count
+                ))
+
+        summaries: List[RandomBenchmarkSummary] = []
+        for algo_name in algorithm_names:
+            steps = algorithm_steps[algo_name]
+            total_steps = sum(steps)
+            summaries.append(RandomBenchmarkSummary(
+                algorithm_name=algo_name,
+                average_steps=total_steps / len(steps) if steps else 0,
+                min_steps=min(steps) if steps else 0,
+                max_steps=max(steps) if steps else 0,
+                total_steps=total_steps,
+                wins=algorithm_wins[algo_name],
+                total_runs=len(steps)
+            ))
+
+        best_summary = min(summaries, key=lambda item: item.average_steps)
+        return RandomBenchmarkResult(
+            benchmark_id=str(uuid.uuid4()),
+            algorithms=algorithm_names,
+            rounds=rounds,
+            tasks_per_round=tasks_per_round,
+            items_per_task=items_per_task,
+            seed=seed,
+            tasks=task_results,
+            summaries=summaries,
+            best_algorithm=best_summary.algorithm_name,
+            timestamp=datetime.now(timezone.utc)
+        )
+
     async def _save_result(self, result: BenchmarkResult):
         """保存結果到檔案"""
         try:

@@ -21,6 +21,18 @@ class CompareBenchmarkRequest(BaseModel):
     test_orders: List[BenchmarkOrder] = Field(..., description="測試訂單列表")
 
 
+class RandomBenchmarkRequest(BaseModel):
+    """隨機多局 Benchmark 請求"""
+    algorithms: List[str] = Field(
+        default=["original", "greedy", "astar", "obstacle_aware"],
+        description="演算法名稱列表"
+    )
+    rounds: int = Field(default=3, ge=1, le=100, description="隨機局數")
+    tasks_per_round: int = Field(default=4, ge=1, le=50, description="每局任務數")
+    items_per_task: int = Field(default=6, ge=1, le=230, description="每個任務的隨機貨物數")
+    seed: Optional[int] = Field(default=None, description="隨機種子；提供後結果可重現")
+
+
 @router.post("/run", response_model=BenchmarkResult)
 async def run_benchmark(request: RunBenchmarkRequest):
     """
@@ -120,6 +132,30 @@ async def compare_algorithms(request: CompareBenchmarkRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"比較演算法失敗: {str(e)}")
 
+
+
+@router.post("/random", response_model=dict)
+async def run_random_benchmark(request: RandomBenchmarkRequest):
+    """
+    使用 random 產生多局、多任務訂單，並比較多個演算法的步數。
+    """
+    try:
+        result = await benchmark_service.run_random_benchmark(
+            algorithm_names=request.algorithms,
+            rounds=request.rounds,
+            tasks_per_round=request.tasks_per_round,
+            items_per_task=request.items_per_task,
+            seed=request.seed
+        )
+
+        return result.model_dump(mode='json')
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"隨機 Benchmark 失敗: {str(e)}")
 
 
 @router.get("/cargo-layout", response_model=dict)
