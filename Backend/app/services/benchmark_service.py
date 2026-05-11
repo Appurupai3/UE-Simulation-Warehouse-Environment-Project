@@ -136,6 +136,42 @@ class BenchmarkService(IBenchmarkService):
         total_steps = route_steps + return_steps + stack_clear_steps
         return total_steps, positions, return_steps, stack_clear_steps
 
+    def _count_route_sequence_steps(
+        self,
+        path: List[int],
+        id_to_position: Dict[int, Position3D],
+        column_positions: Dict[str, List[Position3D]],
+        start_position: Position3D
+    ) -> Tuple[int, List[Position3D], int, int]:
+        """
+        計算會受到訪問順序影響的路徑步數。
+
+        Benchmark 的目的在於比較演算法排出的取貨順序，因此必須計算
+        出貨口 -> 第一件 -> 第二件 -> ... -> 最後回出貨口 的連續路徑。
+        若每件貨物都獨立從出貨口來回，所有演算法只要取相同貨物集合，
+        步數就會完全相同，無法驗證排序演算法是否真的有效。
+        """
+        positions: List[Position3D] = []
+        for item_id in path:
+            if item_id not in id_to_position:
+                raise ValueError(f"項目 {item_id} 不存在於 cargo_data 中")
+            positions.append(id_to_position[item_id])
+
+        route_steps = self.step_counter.count_steps(positions, start_position)
+        return_steps = 0
+        if positions:
+            return_steps = int(self.step_counter.calculate_distance(positions[-1], start_position) + 0.999999)
+
+        stack_clear_steps = 0
+        for pos in positions:
+            column_key = f"{pos.x:.3f}-{pos.z:.3f}"
+            blockers = sum(1 for candidate in column_positions.get(column_key, []) if candidate.y > pos.y)
+            stack_clear_steps += blockers * 2
+
+        total_steps = route_steps + return_steps + stack_clear_steps
+        return total_steps, positions, return_steps, stack_clear_steps
+
+
 
     def get_cargo_layout(self) -> List[Dict]:
         """提供前端 2D 模擬用的倉庫貨位資料"""
@@ -186,7 +222,7 @@ class BenchmarkService(IBenchmarkService):
             path = algorithm.calculate_path(order.items, cargo_data)
             
             start_position = Position3D(x=0, y=0, z=0)
-            step_count, positions, _, _ = self._count_operational_steps(
+            step_count, positions, return_steps, stack_clear_steps = self._count_route_sequence_steps(
                 path,
                 id_to_position,
                 column_positions,
@@ -203,7 +239,12 @@ class BenchmarkService(IBenchmarkService):
                 step_count=step_count,
                 execution_time_ms=execution_time,
                 path=path,
-                positions=positions
+                positions=positions,
+                metadata={
+                    "counting_mode": "route_sequence",
+                    "return_steps": return_steps,
+                    "stack_clear_steps": stack_clear_steps
+                }
             )
             results.append(result)
             

@@ -21,7 +21,7 @@
       <div class="random-header">
         <div>
           <h3>隨機多局驗證</h3>
-          <p>一次產生多個 task / 多局，最後比較四個演算法每次任務與平均步數，避免只看手動訂單造成偏差。</p>
+          <p>一次產生多個 task / 多局，並用「出貨口 → 連續取貨順序 → 回出貨口」計步，比較四個演算法每次任務與平均步數。</p>
         </div>
         <button @click="handleRandomBenchmark" :disabled="loading || selectedAlgorithms.length === 0" class="btn btn-primary">{{ loading ? '隨機測試中...' : '開始隨機 Benchmark' }}</button>
       </div>
