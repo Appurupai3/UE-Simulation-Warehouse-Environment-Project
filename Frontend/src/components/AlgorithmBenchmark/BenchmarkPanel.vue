@@ -48,6 +48,19 @@
           <p><strong>Seed:</strong> {{ randomBenchmarkResult.seed ?? '未指定' }}</p>
         </div>
 
+        <div class="random-chart-card">
+          <div class="chart-title">平均步數比較圖</div>
+          <div v-for="row in randomChartRows" :key="`chart-${row.algorithm_name}`" class="chart-row">
+            <div class="chart-label">{{ getAlgorithmLabel(row.algorithm_name) }}</div>
+            <div class="chart-track">
+              <div class="chart-bar" :style="{ width: `${row.width}%` }"></div>
+            </div>
+            <div class="chart-value">{{ row.average_steps.toFixed(2) }}</div>
+            <div class="chart-delta" :class="{ best: row.delta === 0 }">{{ row.delta === 0 ? '最佳' : `+${row.delta.toFixed(2)}` }}</div>
+          </div>
+          <p class="chart-note">用 seed、每個 task 訂單、每個演算法 path / step 與 2D 模擬交叉檢查，避免結果看起來像亂數硬湊。</p>
+        </div>
+
         <div class="summary-table-wrap">
           <table class="benchmark-table">
             <thead>
@@ -88,7 +101,17 @@
                 <td>第 {{ task.round_number }} 局 / T{{ task.task_number }}</td>
                 <td class="order-cell">{{ task.order.items.join('-') }}</td>
                 <td v-for="algo in randomBenchmarkResult.algorithms" :key="`${task.round_number}-${task.task_number}-${algo}`">
-                  {{ getTaskStep(task, algo) }}
+                  <div class="task-step-cell">
+                    <span class="step-count">{{ getTaskStep(task, algo) }}</span>
+                    <button
+                      class="btn-mini"
+                      :class="{ active: isRandomPreviewSelected(task, algo) }"
+                      @click="selectRandomTaskPreview(task, algo)"
+                    >
+                      看 2D
+                    </button>
+                  </div>
+                  <div class="path-cell">{{ getTaskPath(task, algo).join(' → ') }}</div>
                 </td>
                 <td>{{ getAlgorithmLabel(task.best_algorithm) }}（{{ task.best_step_count }}）</td>
               </tr>
@@ -100,8 +123,8 @@
 
     <div v-if="error" class="error-message">{{ error }}</div>
 
-    <div v-if="batchOptimizationResult" class="result-split">
-      <div class="left-list">
+    <div v-if="batchOptimizationResult || selectedPreview" class="result-split">
+      <div v-if="batchOptimizationResult" class="left-list">
         <div class="best-result">
           <p><strong>最佳演算法:</strong> {{ batchOptimizationResult.best_algorithm }}</p>
           <p><strong>最少總步數:</strong> {{ batchOptimizationResult.best_total_steps }}</p>
@@ -127,6 +150,7 @@
 
       <div class="right-sim2d">
         <h4>2D 倉庫模擬（10 x 5 網格）</h4>
+        <p v-if="selectedPreview?.preview_title" class="sim-selection">目前預覽：{{ selectedPreview.preview_title }}</p>
         <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；車體固定面向單一方向、以 2 格足跡規劃與避碰。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
@@ -200,6 +224,7 @@ export default {
     const randomConfig = ref({ rounds: 3, tasksPerRound: 4, itemsPerTask: 6, seed: '' })
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
+    const selectedRandomPreviewKey = ref('')
     const cargoLayout = ref([])
     const simCanvasRef = ref(null)
 
@@ -225,9 +250,60 @@ export default {
       return [...summaries].sort((a, b) => a.average_steps - b.average_steps)
     })
 
+    const randomChartRows = computed(() => {
+      const summaries = sortedRandomSummaries.value
+      if (!summaries.length) return []
+      const bestAverage = summaries[0].average_steps
+      const maxAverage = Math.max(...summaries.map(item => item.average_steps), bestAverage)
+      return summaries.map((summary) => ({
+        ...summary,
+        width: maxAverage > 0 ? Math.max(6, (summary.average_steps / maxAverage) * 100) : 0,
+        delta: summary.average_steps - bestAverage
+      }))
+    })
+
+    const getTaskAlgorithmResult = (task, algorithmName) => task?.results?.find(item => item.algorithm_name === algorithmName) || null
+
     const getTaskStep = (task, algorithmName) => {
-      const result = task?.results?.find(item => item.algorithm_name === algorithmName)
+      const result = getTaskAlgorithmResult(task, algorithmName)
       return result?.step_count ?? '-'
+    }
+
+    const getTaskPath = (task, algorithmName) => {
+      const result = getTaskAlgorithmResult(task, algorithmName)
+      return result?.path || task?.order?.items || []
+    }
+
+    const getRandomPreviewKey = (task, algorithmName) => `${task?.round_number || 0}-${task?.task_number || 0}-${algorithmName}`
+
+    const buildRandomTaskPreview = (task, algorithmName) => {
+      const result = getTaskAlgorithmResult(task, algorithmName)
+      if (!task || !result) return null
+      const path = result.path || task.order?.items || []
+      return {
+        algorithm_name: algorithmName,
+        total_steps: result.step_count,
+        total_batches: 1,
+        preview_title: `隨機第 ${task.round_number} 局 / Task ${task.task_number} / ${getAlgorithmLabel(algorithmName)} / ${result.step_count} 步`,
+        batches: [
+          {
+            batch_number: 1,
+            items: path,
+            path,
+            step_count: result.step_count,
+            positions: result.positions || []
+          }
+        ]
+      }
+    }
+
+    const isRandomPreviewSelected = (task, algorithmName) => selectedRandomPreviewKey.value === getRandomPreviewKey(task, algorithmName)
+
+    const selectRandomTaskPreview = (task, algorithmName) => {
+      const preview = buildRandomTaskPreview(task, algorithmName)
+      if (!preview) return
+      selectedPreview.value = preview
+      selectedRandomPreviewKey.value = getRandomPreviewKey(task, algorithmName)
     }
 
     const currentLegLabel = computed(() => {
@@ -943,9 +1019,13 @@ export default {
         itemsPerTask: normalizePositiveInt(randomConfig.value.itemsPerTask, 6, 1, 230),
         seed: seedValue === '' || seedValue === null ? null : Number(seedValue)
       })
-      if (result) randomBenchmarkResult.value = result
+      if (result) {
+        randomBenchmarkResult.value = result
+        const firstTask = result.tasks?.[0]
+        if (firstTask) selectRandomTaskPreview(firstTask, firstTask.best_algorithm || result.algorithms?.[0])
+      }
     }
-    const selectPreview = (result) => { selectedPreview.value = result }
+    const selectPreview = (result) => { selectedPreview.value = result; selectedRandomPreviewKey.value = '' }
 
     const writeOrdersFromAlgorithm = async (algorithmResult) => {
       await fetch('http://localhost:8000/orders', { method: 'DELETE' })
@@ -969,9 +1049,9 @@ export default {
     fetchCargoLayout()
 
     return {
-      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, randomBenchmarkResult, randomConfig, sortedRandomSummaries, applyingBatches, loading, error,
+      selectedAlgorithms, availableAlgorithms, batchOptimizationResult, randomBenchmarkResult, randomConfig, sortedRandomSummaries, randomChartRows, applyingBatches, loading, error,
       animationLegs, animationIndex, isAnimating, simulationEvents, previewCargoCells, currentLegLabel, simCanvasRef,
-      handleOptimizeAllOrders, handleRandomBenchmark, selectPreview, getAlgorithmLabel, getTaskStep, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
+      handleOptimizeAllOrders, handleRandomBenchmark, selectPreview, selectRandomTaskPreview, isRandomPreviewSelected, getAlgorithmLabel, getTaskStep, getTaskPath, startAnimation, pauseAnimation, resetAnimation, stepForward, stepBackward,
       applyBatchesToWarehouse, startSimulationFromBenchmark
     }
   }
@@ -1010,13 +1090,28 @@ export default {
 .random-controls input { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 14px; }
 .random-results { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .random-best { border-left: 4px solid #3b82f6; }
+.random-chart-card { background: #f8fafc; border: 1px solid #dbeafe; border-radius: 8px; padding: 12px; }
+.chart-title { font-weight: 800; color: #1e3a8a; margin-bottom: 8px; }
+.chart-row { display: grid; grid-template-columns: 150px 1fr 72px 64px; align-items: center; gap: 8px; margin-bottom: 8px; }
+.chart-label { font-size: 12px; font-weight: 700; color: #334155; }
+.chart-track { height: 18px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+.chart-bar { height: 100%; background: linear-gradient(90deg, #60a5fa, #2563eb); border-radius: 999px; }
+.chart-value, .chart-delta { font-size: 12px; font-weight: 700; color: #334155; text-align: right; }
+.chart-delta.best { color: #059669; }
+.chart-note { margin: 8px 0 0; color: #475569; font-size: 12px; }
+.task-step-cell { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.step-count { font-weight: 800; color: #111827; }
+.btn-mini { border: 0; border-radius: 999px; padding: 4px 8px; background: #dbeafe; color: #1d4ed8; cursor: pointer; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.btn-mini.active { background: #2563eb; color: #fff; }
+.path-cell { margin-top: 4px; max-width: 180px; color: #64748b; font-size: 11px; line-height: 1.35; word-break: break-all; }
+.sim-selection { margin: 0 0 6px; color: #1d4ed8; font-size: 13px; font-weight: 800; }
 .summary-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
 .task-table-wrap { max-height: 360px; overflow: auto; }
 .benchmark-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
 .benchmark-table th, .benchmark-table td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
 .benchmark-table th { background: #eff6ff; color: #1e3a8a; position: sticky; top: 0; z-index: 1; }
 .order-cell { max-width: 220px; word-break: break-all; color: #475569; }
-@media (max-width: 900px) { .random-header { flex-direction: column; } .random-controls { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .random-header { flex-direction: column; } .random-controls { grid-template-columns: 1fr 1fr; } .chart-row { grid-template-columns: 110px 1fr 58px 52px; } }
 @media (max-width: 640px) { .random-controls { grid-template-columns: 1fr; } }
 @media (max-width: 1100px) { .result-split { grid-template-columns: 1fr; } }
 </style>
