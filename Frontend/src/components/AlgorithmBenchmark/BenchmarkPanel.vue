@@ -151,7 +151,7 @@
       <div class="right-sim2d">
         <h4>2D 倉庫模擬（10 x 5 網格）</h4>
         <p v-if="selectedPreview?.preview_title" class="sim-selection">目前預覽：{{ selectedPreview.preview_title }}</p>
-        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；車體固定面向單一方向、以 2 格足跡規劃與避碰。</p>
+        <p class="sim-caption">藍色：取貨、綠色：回出貨口、紫色：搬離堆疊物；按「看 2D 模擬圖」會自動播放，也可用下方控制鍵逐步檢查。</p>
         <canvas ref="simCanvasRef" class="sim-canvas" width="540" height="360"></canvas>
         <div class="sim-controls">
           <button class="btn btn-preview" @click="startAnimation" :disabled="!animationLegs.length || isAnimating">開始</button>
@@ -225,6 +225,7 @@ export default {
     const applyingBatches = ref(false)
     const selectedPreview = ref(null)
     const selectedRandomPreviewKey = ref('')
+    const previewPlaybackRequest = ref(0)
     const cargoLayout = ref([])
     const simCanvasRef = ref(null)
 
@@ -299,11 +300,16 @@ export default {
 
     const isRandomPreviewSelected = (task, algorithmName) => selectedRandomPreviewKey.value === getRandomPreviewKey(task, algorithmName)
 
+    const requestPreviewPlayback = () => {
+      previewPlaybackRequest.value += 1
+    }
+
     const selectRandomTaskPreview = (task, algorithmName) => {
       const preview = buildRandomTaskPreview(task, algorithmName)
       if (!preview) return
       selectedPreview.value = preview
       selectedRandomPreviewKey.value = getRandomPreviewKey(task, algorithmName)
+      requestPreviewPlayback()
     }
 
     const currentLegLabel = computed(() => {
@@ -326,6 +332,7 @@ export default {
         if (!response.ok) return
         const data = await response.json()
         cargoLayout.value = data?.cargo || []
+        if (selectedPreview.value) requestPreviewPlayback()
       } catch (e) {
         console.warn('載入 cargo-layout 失敗', e)
       }
@@ -1025,7 +1032,7 @@ export default {
         if (firstTask) selectRandomTaskPreview(firstTask, firstTask.best_algorithm || result.algorithms?.[0])
       }
     }
-    const selectPreview = (result) => { selectedPreview.value = result; selectedRandomPreviewKey.value = '' }
+    const selectPreview = (result) => { selectedPreview.value = result; selectedRandomPreviewKey.value = ''; requestPreviewPlayback() }
 
     const writeOrdersFromAlgorithm = async (algorithmResult) => {
       await fetch('http://localhost:8000/orders', { method: 'DELETE' })
@@ -1043,7 +1050,13 @@ export default {
     const applyBatchesToWarehouse = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult) } finally { applyingBatches.value = false } }
     const startSimulationFromBenchmark = async (algorithmResult) => { if (applyingBatches.value) return; applyingBatches.value = true; try { await writeOrdersFromAlgorithm(algorithmResult); saveBenchmarkBridge(algorithmResult); window.open('/three.html', '_blank') } finally { applyingBatches.value = false } }
 
-    watch(selectedPreview, async () => { pauseAnimation(); buildAnimationLegs(); await nextTick(); drawCanvas() }, { deep: true })
+    watch([selectedPreview, previewPlaybackRequest], async () => {
+      pauseAnimation()
+      buildAnimationLegs()
+      await nextTick()
+      drawCanvas()
+      startAnimation()
+    }, { deep: true })
     watch(animationIndex, drawCanvas)
     onBeforeUnmount(pauseAnimation)
     fetchCargoLayout()
