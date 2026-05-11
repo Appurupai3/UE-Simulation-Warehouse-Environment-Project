@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { SIMULATION_STEP_MS, SIMULATION_STEP_SECONDS } from "./simulationTiming.js";
 
 /**
  * 車子管理器
@@ -51,6 +52,13 @@ export class CarManager {
         this.taskCounter = 0;
     }
 
+    syncSpeedToSimulationStep() {
+        const stepDistance = Math.max(this.stepX || 0, this.stepZ || 0);
+        if (stepDistance > 0) {
+            this.carSpeed = stepDistance / SIMULATION_STEP_SECONDS;
+        }
+    }
+
     /**
      * 創建軌道上的車子
      * @param {Object} gridMetrics - 網格度量資訊
@@ -70,6 +78,7 @@ export class CarManager {
         this.trackY = gridMetrics.pillarTopY + gridMetrics.boxHeight * 0.7;
         this.cargoMountOffset = gridMetrics.boxHeight * 0.8;
         this.cargoFrontOffset = (gridMetrics.boxDepth + gridMetrics.spacingZ) * 0.3;
+        this.syncSpeedToSimulationStep();
 
         // 只創建兩台車：一台橫向，一台縱向
         const carConfigs = [
@@ -1556,7 +1565,7 @@ export class CarManager {
 
             if (targetPoint.waitStep && targetPoint.coord.x === carData.currentCoord.x && targetPoint.coord.z === carData.currentCoord.z) {
                 if (!carData.plannedWaitUntil) {
-                    carData.plannedWaitUntil = Date.now() + 220;
+                    carData.plannedWaitUntil = Date.now() + SIMULATION_STEP_MS;
                 }
 
                 if (Date.now() < carData.plannedWaitUntil) {

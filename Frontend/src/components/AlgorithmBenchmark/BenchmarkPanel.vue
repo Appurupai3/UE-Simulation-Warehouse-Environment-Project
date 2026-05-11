@@ -67,6 +67,7 @@
 <script>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useBenchmark } from '../../composables/useBenchmark'
+import { SIMULATION_STEP_MS } from '../../utils/simulationTiming'
 
 export default {
   name: 'BenchmarkPanel',
@@ -819,7 +820,7 @@ export default {
       timer = setInterval(() => {
         if (animationIndex.value >= animationLegs.value.length - 1) { clearInterval(timer); timer = null; isAnimating.value = false; return }
         animationIndex.value += 1
-      }, 220)
+      }, SIMULATION_STEP_MS)
     }
     const pauseAnimation = () => { if (timer) { clearInterval(timer); timer = null }; isAnimating.value = false }
     const resetAnimation = () => { pauseAnimation(); animationIndex.value = 0; drawCanvas() }
