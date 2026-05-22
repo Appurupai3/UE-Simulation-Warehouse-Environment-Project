@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { warehouseGrid } from "../../../utils/warehouseConfig";
+import { warehouseGrid, storageDepth } from "../../../utils/warehouseConfig";
 
 export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComplete }) {
     const { width, depth, height } = warehouseGrid;
@@ -38,7 +38,7 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
     const pillarRadius = Math.min(boxWidth, boxDepth) * 0.02;
 
     for (let x = 0; x < width; x++) {
-        for (let z = 0; z < depth; z++) {
+        for (let z = 0; z < storageDepth; z++) {
             const isUnloadCell = unloadAreaCells.has(`${x}-${z}`);
 
             for (let y = 0; y < height; y++) {
