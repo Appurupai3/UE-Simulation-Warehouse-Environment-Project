@@ -1,6 +1,6 @@
 export const warehouseGrid = {
   width: 5,
-  depth: 10,
+  depth: 11,
   height: 5
 }
 
