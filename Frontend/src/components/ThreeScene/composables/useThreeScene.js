@@ -569,15 +569,43 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         return shuffle(coords);
     }
 
-    async function restockDeliveredItems(deliveredBoxes, fallbackCarId) {
+    function placeBoxAtCoordImmediately(box, coord) {
+        if (!box || !coord || !gridMetricsCache) return false;
+        const stack = getStackAtCoord(coord);
+        if (stack.length >= gridMetricsCache.height) return false;
+
+        const yLevel = stack.length;
+        const position = carManager?.getBoxWorldPosition
+            ? carManager.getBoxWorldPosition(coord.x, yLevel, coord.z)
+            : null;
+        if (!position) return false;
+
+        if (box.parent !== scene) {
+            scene.attach(box);
+        }
+        box.position.copy(position);
+        box.rotation.set(0, 0, 0);
+        box.userData.gridCoord = { x: coord.x, y: yLevel, z: coord.z };
+        box.userData.defaultGridCoord = { x: coord.x, y: yLevel, z: coord.z };
+        box.userData.defaultPosition = box.position.clone();
+        box.userData.isPicked = false;
+        box.userData.attachedToCarId = null;
+        box.userData.originalParent = scene;
+        box.updateMatrixWorld(true);
+        return true;
+    }
+
+    async function restockDeliveredItems(deliveredBoxes) {
         const pending = deliveredBoxes.filter(Boolean);
         if (pending.length === 0) return;
-        const carId = fallbackCarId || getDefaultCarId();
 
         for (const box of pending) {
             const targets = getRandomRestockCoords();
             if (targets.length === 0) break;
-            await moveCargoBoxToCoords(carId, box, targets);
+            const placed = targets.some((coord) => placeBoxAtCoordImmediately(box, coord));
+            if (!placed) {
+                executionStatus.value = `回庫上架失敗：商品 ${box.userData?.boxId ?? '-'}`;
+            }
         }
 
         if (currentModelSize) {
@@ -749,7 +777,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 await pause(5000);
 
                 const deliveredBoxes = boxes.filter((box) => deliveredItemIds.has(box.userData?.boxId));
-                await restockDeliveredItems(deliveredBoxes, taskConfigs[0]?.carId || getDefaultCarId());
+                await restockDeliveredItems(deliveredBoxes);
             }
 
             if (flaggedOrders.length > 0) {
