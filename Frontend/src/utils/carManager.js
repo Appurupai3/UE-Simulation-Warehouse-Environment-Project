@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { SIMULATION_STEP_MS, SIMULATION_STEP_SECONDS } from "./simulationTiming.js";
 
 /**
  * 車子管理器
@@ -51,6 +52,13 @@ export class CarManager {
         this.taskCounter = 0;
     }
 
+    syncSpeedToSimulationStep() {
+        const stepDistance = Math.max(this.stepX || 0, this.stepZ || 0);
+        if (stepDistance > 0) {
+            this.carSpeed = stepDistance / SIMULATION_STEP_SECONDS;
+        }
+    }
+
     /**
      * 創建軌道上的車子
      * @param {Object} gridMetrics - 網格度量資訊
@@ -70,6 +78,7 @@ export class CarManager {
         this.trackY = gridMetrics.pillarTopY + gridMetrics.boxHeight * 0.7;
         this.cargoMountOffset = gridMetrics.boxHeight * 0.8;
         this.cargoFrontOffset = (gridMetrics.boxDepth + gridMetrics.spacingZ) * 0.3;
+        this.syncSpeedToSimulationStep();
 
         // 只創建兩台車：一台橫向，一台縱向
         const carConfigs = [
@@ -241,6 +250,210 @@ export class CarManager {
         const heading = car.heading?.clone?.() || this.unloadFacingDirection.clone();
         const bodyCoord = this.getCarBodyCoord(anchorCoord, heading);
         return [anchorCoord, bodyCoord];
+    }
+
+    getGridCoordKey(coord) {
+        return `${coord.x}-${coord.z}`;
+    }
+
+    getGridStateKey(state) {
+        return `${state.coord.x}-${state.coord.z}|${state.direction.x},${state.direction.z}`;
+    }
+
+    normalizeGridDirection(direction) {
+        const x = Number(direction?.x);
+        const z = Number(direction?.z);
+        if (Number.isFinite(x) && Number.isFinite(z) && (x !== 0 || z !== 0)) {
+            if (Math.abs(x) > Math.abs(z)) {
+                return { x: Math.sign(x), z: 0 };
+            }
+            return { x: 0, z: Math.sign(z) || -1 };
+        }
+        return {
+            x: Math.round(this.unloadFacingDirection.x),
+            z: Math.round(this.unloadFacingDirection.z) || -1,
+        };
+    }
+
+    getFootprintCoordsForState(state) {
+        const direction = this.normalizeGridDirection(state.direction);
+        return [
+            { x: state.coord.x, z: state.coord.z },
+            { x: state.coord.x - direction.x, z: state.coord.z - direction.z },
+        ];
+    }
+
+    isFootprintInsideGrid(state) {
+        if (!this.gridMetrics) return false;
+        return this.getFootprintCoordsForState(state).every((coord) => (
+            coord.x >= 0 &&
+            coord.x < this.gridMetrics.width &&
+            coord.z >= 0 &&
+            coord.z < this.gridMetrics.depth
+        ));
+    }
+
+    getPlanningStateForCar(car, coord = car?.currentCoord) {
+        const heading = car?.heading?.clone?.() || this.unloadFacingDirection.clone();
+        const direction = this.normalizeGridDirection({ x: heading.x, z: heading.z });
+        return { coord: { ...coord }, direction };
+    }
+
+    clonePlanningState(state) {
+        return {
+            coord: { ...state.coord },
+            direction: { ...state.direction },
+        };
+    }
+
+    getNextPlanningStates(state) {
+        const steps = [
+            { x: 0, z: 0, waitStep: true },
+            { x: 1, z: 0 },
+            { x: -1, z: 0 },
+            { x: 0, z: 1 },
+            { x: 0, z: -1 },
+        ];
+
+        return steps
+            .map((step) => ({
+                coord: { x: state.coord.x + step.x, z: state.coord.z + step.z },
+                direction: { ...state.direction },
+                waitStep: Boolean(step.waitStep),
+            }))
+            .filter((nextState) => this.isFootprintInsideGrid(nextState));
+    }
+
+    addTimeReservation(reservations, time, fromState, toState) {
+        const toKeys = this.getFootprintCoordsForState(toState).map((coord) => this.getGridCoordKey(coord));
+        const fromKeys = this.getFootprintCoordsForState(fromState).map((coord) => this.getGridCoordKey(coord));
+
+        toKeys.forEach((key) => reservations.vertex.add(`${time}:${key}`));
+        fromKeys.forEach((fromKey) => {
+            toKeys.forEach((toKey) => reservations.edge.add(`${time}:${fromKey}->${toKey}`));
+        });
+    }
+
+    buildTimeReservations(activeCarId, horizon = 120) {
+        const reservations = { vertex: new Set(), edge: new Set() };
+
+        this.cars.forEach((car) => {
+            if (!car || car.id === activeCarId || !car.currentCoord) return;
+
+            let previousState = this.getPlanningStateForCar(car);
+            this.getFootprintCoordsForState(previousState).forEach((coord) => {
+                reservations.vertex.add(`0:${this.getGridCoordKey(coord)}`);
+            });
+
+            const remainingPath = Array.isArray(car.path)
+                ? car.path.slice(Math.max(0, car.pathIndex || 0))
+                : [];
+
+            remainingPath.forEach((pathPoint, index) => {
+                if (!pathPoint?.coord) return;
+                const nextState = this.getPlanningStateForCar(car, pathPoint.coord);
+                const time = index + 1;
+                this.addTimeReservation(reservations, time, previousState, nextState);
+                previousState = nextState;
+            });
+
+            for (let time = remainingPath.length + 1; time <= horizon; time++) {
+                this.getFootprintCoordsForState(previousState).forEach((coord) => {
+                    reservations.vertex.add(`${time}:${this.getGridCoordKey(coord)}`);
+                });
+            }
+        });
+
+        return reservations;
+    }
+
+    isPlanningStateFree(reservations, time, state) {
+        if (!this.isFootprintInsideGrid(state)) return false;
+        return this.getFootprintCoordsForState(state).every((coord) => (
+            !reservations.vertex.has(`${time}:${this.getGridCoordKey(coord)}`)
+        ));
+    }
+
+    isPlanningEdgeFree(reservations, time, fromState, toState) {
+        const fromKeys = this.getFootprintCoordsForState(fromState).map((coord) => this.getGridCoordKey(coord));
+        const toKeys = this.getFootprintCoordsForState(toState).map((coord) => this.getGridCoordKey(coord));
+        return fromKeys.every((fromKey) => (
+            toKeys.every((toKey) => !reservations.edge.has(`${time}:${toKey}->${fromKey}`))
+        ));
+    }
+
+    reconstructReservedPath(cameFrom, endKey) {
+        const reversedPath = [];
+        let cursor = endKey;
+
+        while (cursor) {
+            const [timeText, stateText] = cursor.split(":");
+            const [coordText] = stateText.split("|");
+            const [x, z] = coordText.split("-").map(Number);
+            const parentKey = cameFrom.get(cursor);
+            let waitStep = false;
+
+            if (parentKey) {
+                const [, parentStateText] = parentKey.split(":");
+                const [parentCoordText] = parentStateText.split("|");
+                waitStep = parentCoordText === coordText;
+            }
+
+            reversedPath.push({ x, z, waitStep, time: Number(timeText) });
+            cursor = parentKey || null;
+        }
+
+        return reversedPath.reverse();
+    }
+
+    findGridPathWithReservedFootprints(startCoord, targetCoord, carId, maxDepth = 120) {
+        const car = this.getCarById(carId);
+        if (!car || !this.gridMetrics) return null;
+
+        const startState = this.getPlanningStateForCar(car, startCoord);
+        if (!this.isFootprintInsideGrid(startState)) return null;
+
+        if (!this.enableCollisionAvoidance) {
+            return this.findGridPathAStarWithoutReservations(startCoord, targetCoord, carId);
+        }
+
+        const reservations = this.buildTimeReservations(carId, maxDepth);
+        const startKey = `0:${this.getGridStateKey(startState)}`;
+        const goalKey = this.getGridCoordKey(targetCoord);
+        const frontier = [{ state: this.clonePlanningState(startState), time: 0, priority: this.manhattanDistance(startCoord, targetCoord) }];
+        const visited = new Set([startKey]);
+        const cameFrom = new Map([[startKey, null]]);
+
+        while (frontier.length > 0) {
+            frontier.sort((a, b) => a.priority - b.priority);
+            const current = frontier.shift();
+            if (!current) break;
+
+            if (this.getGridCoordKey(current.state.coord) === goalKey) {
+                return this.reconstructReservedPath(cameFrom, `${current.time}:${this.getGridStateKey(current.state)}`);
+            }
+
+            if (current.time >= maxDepth) continue;
+
+            this.getNextPlanningStates(current.state).forEach((nextState) => {
+                const nextTime = current.time + 1;
+                if (!this.isPlanningStateFree(reservations, nextTime, nextState)) return;
+                if (!this.isPlanningEdgeFree(reservations, nextTime, current.state, nextState)) return;
+
+                const nextKey = `${nextTime}:${this.getGridStateKey(nextState)}`;
+                if (visited.has(nextKey)) return;
+
+                visited.add(nextKey);
+                cameFrom.set(nextKey, `${current.time}:${this.getGridStateKey(current.state)}`);
+                frontier.push({
+                    state: this.clonePlanningState(nextState),
+                    time: nextTime,
+                    priority: nextTime + this.manhattanDistance(nextState.coord, targetCoord) + (nextState.waitStep ? 0.25 : 0),
+                });
+            });
+        }
+
+        return this.findGridPathAStarWithoutReservations(startCoord, targetCoord, carId);
     }
 
     getOccupierCarIdAtCoord(coord, activeCarId, includeReservations = true) {
@@ -583,10 +796,14 @@ export class CarManager {
         return penalty;
     }
 
+    findGridPathAStar(startCoord, targetCoord, carId) {
+        return this.findGridPathWithReservedFootprints(startCoord, targetCoord, carId);
+    }
+
     /**
      * A* 路徑規劃算法（比 BFS 更智能）
      */
-    findGridPathAStar(startCoord, targetCoord, carId) {
+    findGridPathAStarWithoutReservations(startCoord, targetCoord, carId) {
         const openSet = new Map(); // 待探索節點
         const closedSet = new Set(); // 已探索節點
         const gScore = new Map(); // 從起點到該點的實際成本
@@ -832,6 +1049,7 @@ export class CarManager {
                             coord,
                             direction: carHeading.clone(),
                             position: this.getCargoAlignedPosition(coord, carHeading),
+                            waitStep: Boolean(coord.waitStep),
                         }));
                         car.pathIndex = 0;
                         car.isWaiting = false;
@@ -878,7 +1096,7 @@ export class CarManager {
             return { success: false, message: "目的地超出架位範圍" };
         }
 
-        // 使用 A* 算法規劃路徑
+        // 使用與 2D 模擬圖一致的足跡感知時空預約路徑規劃
         let pathCoords = this.findGridPathAStar(car.currentCoord, targetCoord, car.id);
         let usedBlockedFallbackPath = false;
 
@@ -899,6 +1117,7 @@ export class CarManager {
             coord,
             direction: carHeading.clone(),
             position: this.getCargoAlignedPosition(coord, carHeading),
+            waitStep: Boolean(coord.waitStep),
         }));
 
         car.path = newPath;
@@ -912,14 +1131,14 @@ export class CarManager {
             car.heading = this.unloadFacingDirection.clone();
         }
 
-        // 預約整條路徑
-        this.reservePathGrids(car.id, pathCoords);
+        // 3D 現在沿用 2D 模擬圖的時空足跡規劃，避免用永久格位預約鎖死可錯時通行的路徑。
+        this.releasePathReservation(car.id);
 
         if (usedBlockedFallbackPath) {
             return { success: true, message: `${car.name} 目標暫時受阻，已建立待通行路線（${pathCoords.length} 步）` };
         }
 
-        return { success: true, message: `${car.name} 路線已更新（${pathCoords.length} 步）` };
+        return { success: true, message: `${car.name} 已套用 2D 足跡避碰路徑（${pathCoords.length} 步）` };
     }
 
     /**
@@ -1161,6 +1380,7 @@ export class CarManager {
             coord,
             direction: carHeading.clone(),
             position: this.getCargoAlignedPosition(coord, carHeading),
+            waitStep: Boolean(coord.waitStep),
         }));
         carData.pathIndex = 0;
         carData.isWaiting = false;
@@ -1182,6 +1402,7 @@ export class CarManager {
             carData.isWaiting = false;
             carData.lastMovingObstacleReplanAt = 0;
             carData.movingObstacleReplanAttempts = 0;
+            carData.plannedWaitUntil = 0;
             carData.waitTicks = 0;
             carData.blockedBy = null;
             return;
@@ -1287,6 +1508,7 @@ export class CarManager {
                                 coord,
                                 direction: carHeading.clone(),
                                 position: this.getCargoAlignedPosition(coord, carHeading),
+                                waitStep: Boolean(coord.waitStep),
                             }));
                             carData.pathIndex = 0;
                             carData.isWaiting = false;
@@ -1312,6 +1534,7 @@ export class CarManager {
                                     coord,
                                     direction: carHeading.clone(),
                                     position: this.getCargoAlignedPosition(coord, carHeading),
+                                    waitStep: Boolean(coord.waitStep),
                                 }));
                                 carData.pathIndex = 0;
                                 carData.isWaiting = false;
@@ -1338,6 +1561,23 @@ export class CarManager {
                 carData.lastMovingObstacleReplanAt = 0;
                 carData.movingObstacleReplanAttempts = 0;
                 console.log(`✅ ${carData.name} 繼續移動`);
+            }
+
+            if (targetPoint.waitStep && targetPoint.coord.x === carData.currentCoord.x && targetPoint.coord.z === carData.currentCoord.z) {
+                if (!carData.plannedWaitUntil) {
+                    carData.plannedWaitUntil = Date.now() + SIMULATION_STEP_MS;
+                }
+
+                if (Date.now() < carData.plannedWaitUntil) {
+                    remainingDistance = 0;
+                    break;
+                }
+
+                carData.plannedWaitUntil = 0;
+                if (carData.pathIndex < path.length - 1) {
+                    carData.pathIndex += 1;
+                    continue;
+                }
             }
 
             const direction = new THREE.Vector3().subVectors(targetPoint.position, currentPos);
@@ -1372,6 +1612,7 @@ export class CarManager {
             carData.waitReason = null;
             carData.lastMovingObstacleReplanAt = 0;
             carData.movingObstacleReplanAttempts = 0;
+            carData.plannedWaitUntil = 0;
             this.releasePathReservation(carData.id);
             console.log(`🎯 ${carData.name} 已到達目的地`);
             if (mode === 'advanced' && carData.collaborativeTaskId) {
