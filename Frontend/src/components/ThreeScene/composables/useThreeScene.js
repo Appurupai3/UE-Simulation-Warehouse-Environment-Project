@@ -257,6 +257,14 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         });
     }
 
+    function isBoxAtShippingTarget(box, shippingTarget) {
+        const target = shippingTarget?.coord;
+        const coord = box?.userData?.gridCoord;
+        if (!target || !coord) return false;
+        if (box.userData?.isPicked) return false;
+        return coord.x === target.x && coord.z === target.z;
+    }
+
     function isUnloadAreaCoord(coord) {
         return unloadAreaCells.has(`${coord.x}-${coord.z}`);
     }
@@ -616,7 +624,10 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     async function reconcileOrderItems({ carId, items, shippingTarget, itemAssignments, deliveredItemIds }) {
         const missingItems = [];
         for (const itemId of items || []) {
-            if (!deliveredItemIds?.has(itemId)) missingItems.push(itemId);
+            const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+            if (!box || !isBoxAtShippingTarget(box, shippingTarget)) {
+                missingItems.push(itemId);
+            }
         }
 
         const failedItems = [];
