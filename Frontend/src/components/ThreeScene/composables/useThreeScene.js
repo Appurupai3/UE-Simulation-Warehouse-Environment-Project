@@ -650,6 +650,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         const orderItemIds = new Set(items);
 
+        const failedItemIds = [];
         for (const itemId of items) {
             if (deliveredItemIds?.has(itemId)) {
                 continue;
@@ -660,22 +661,26 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
             if (!cargoBox) {
                 executionStatus.value = `找不到商品 ${itemId}`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
             if (!cargoBox.userData?.gridCoord) {
                 executionStatus.value = `商品 ${itemId} 的位置資訊缺失`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
             const clearResult = await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
             if (!clearResult.success) {
                 executionStatus.value = `商品 ${itemId} 無法清除阻擋貨物：${clearResult.message}`;
+                failedItemIds.push(itemId);
                 continue;
             }
             const moveResult = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
             if (!moveResult) {
                 executionStatus.value = `商品 ${itemId} 卸貨失敗`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
@@ -687,7 +692,13 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             saveBoxData(boxes, currentModelSize);
         }
 
-        return { success: true, message: `訂單 ${order?.id ?? ""} 已完成`.trim() };
+        return {
+            success: failedItemIds.length === 0,
+            message: failedItemIds.length === 0
+                ? `訂單 ${order?.id ?? ""} 已完成`.trim()
+                : `訂單 ${order?.id ?? ""} 有未完成商品：${failedItemIds.join(", ")}`.trim(),
+            failedItemIds,
+        };
     }
 
     async function executeOrders(orderTasks = []) {
@@ -761,15 +772,19 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                         deliveredItemIds,
                     });
 
-                    const hasFailed = reconcile.failedItems.length > 0;
+                    const hasFailed = reconcile.failedItems.length > 0 || !results[i]?.success;
+                    const failedIds = Array.from(new Set([
+                        ...(results[i]?.failedItemIds || []),
+                        ...reconcile.failedItems,
+                    ]));
                     if (!hasFailed && results[i]?.success) {
                         if (orderId) completedOrderIds.push(orderId);
                     } else if (orderId) {
-                        flaggedOrders.push({ orderId, failedItems: reconcile.failedItems });
+                        flaggedOrders.push({ orderId, failedItems: failedIds });
                     }
 
                     executionFlows.value[i].status = hasFailed
-                        ? `訂單 ${orderId ?? "-"} 核對有漏件：${reconcile.failedItems.join(", ")}（已特別標記）`
+                        ? `訂單 ${orderId ?? "-"} 核對有漏件：${failedIds.join(", ")}（已特別標記）`
                         : `訂單 ${orderId ?? "-"} 已完成（目標 ${config.shippingTarget?.label ?? "-"}）`;
                 }
 
