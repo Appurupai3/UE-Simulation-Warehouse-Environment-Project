@@ -9,7 +9,7 @@ import { createTrackSystem } from '../utils/trackSystem';
 import { createPlayer } from '../utils/player';
 import { setupInputHandlers } from '../utils/inputHandlers';
 import { setupHoverDetection } from '../utils/hoverDetection';
-import { unloadBays, unloadAreaCells } from '../../../utils/warehouseConfig.js';
+import { unloadBays, unloadAreaCells, storageDepth } from '../../../utils/warehouseConfig.js';
 
 export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPosition }) {
     let scene, camera, renderer, boxes = [], baseModel = null, trackPieces = [];
@@ -84,7 +84,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                                     id: `${i}`,
                                     label: `X${i + 1}`,
                                 }));
-                                destinationYOptions.value = Array.from({ length: metrics.depth }, (_, i) => ({
+                                destinationYOptions.value = Array.from({ length: storageDepth }, (_, i) => ({
                                     id: `${i}`,
                                     label: `Y${i + 1}`,
                                 }));
@@ -368,7 +368,8 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     function getManhattanRingCoords(centerCoord, distance) {
         if (!gridMetricsCache || distance < 1) return [];
 
-        const { width, depth } = gridMetricsCache;
+        const { width } = gridMetricsCache;
+        const depth = storageDepth;
         const candidates = [];
         const seen = new Set();
 
