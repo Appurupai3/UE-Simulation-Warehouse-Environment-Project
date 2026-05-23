@@ -583,8 +583,8 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         if (stack.length >= gridMetricsCache.height) return false;
 
         const yLevel = stack.length;
-        const position = carManager?.getBoxWorldPosition
-            ? carManager.getBoxWorldPosition(coord.x, yLevel, coord.z)
+        const position = carManager?.getShelfWorldPosition
+            ? carManager.getShelfWorldPosition({ x: coord.x, y: yLevel, z: coord.z })
             : null;
         if (!position) return false;
 
