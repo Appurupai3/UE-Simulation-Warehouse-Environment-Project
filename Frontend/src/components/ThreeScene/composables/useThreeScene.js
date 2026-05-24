@@ -653,6 +653,16 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         return { missingItems, failedItems };
     }
+
+
+    async function reconcileOrderByAssignments({ fallbackCarId, items, itemAssignments, deliveredItemIds }) {
+        return reconcileBatchItems({
+            fallbackCarId,
+            expectedItemIds: items || [],
+            itemAssignments,
+            deliveredItemIds,
+        });
+    }
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
         if (!carId) {
             return { success: false, message: "尚未分配車輛" };
@@ -776,29 +786,30 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
                 }));
 
-                const results = await Promise.all(taskConfigs.map((config) => executeOrder({ ...config, itemAssignments, deliveredItemIds })));
+                const taskResults = await Promise.all(taskConfigs.map(async (config, i) => {
+                    const executeResult = await executeOrder({ ...config, itemAssignments, deliveredItemIds });
+                    executionStatus.value = `訂單 ${config.order?.id ?? "-"}（${config.shippingTarget?.label ?? "-"}）已完成取貨，立即進入檢測階段`;
+                    const reconcileResult = await reconcileOrderByAssignments({
+                        fallbackCarId: config.carId || taskConfigs[0]?.carId || getDefaultCarId(),
+                        items: config.items || [],
+                        itemAssignments,
+                        deliveredItemIds,
+                    });
+                    return { executeResult, reconcileResult, index: i };
+                }));
 
-                executionStatus.value = `批次 ${Math.floor(startIndex / 2) + 1} 所有商品已拾取，立即進入檢測階段`;
-                const expectedItemIds = taskConfigs.flatMap((config) => config.items || []);
-                const reconcile = await reconcileBatchItems({
-                    fallbackCarId: taskConfigs[0]?.carId || getDefaultCarId(),
-                    expectedItemIds,
-                    itemAssignments,
-                    deliveredItemIds,
-                });
-
-                for (let i = 0; i < taskConfigs.length; i++) {
+                for (const resultEntry of taskResults) {
+                    const i = resultEntry.index;
                     const config = taskConfigs[i];
                     const orderId = config.order?.id;
-                    const orderItems = new Set(config.items || []);
-                    const orderFailedByReconcile = reconcile.failedItems.filter((itemId) => orderItems.has(itemId));
+                    const orderFailedByReconcile = resultEntry.reconcileResult.failedItems;
 
-                    const hasFailed = orderFailedByReconcile.length > 0 || !results[i]?.success;
+                    const hasFailed = orderFailedByReconcile.length > 0 || !resultEntry.executeResult?.success;
                     const failedIds = Array.from(new Set([
-                        ...(results[i]?.failedItemIds || []),
+                        ...(resultEntry.executeResult?.failedItemIds || []),
                         ...orderFailedByReconcile,
                     ]));
-                    if (!hasFailed && results[i]?.success) {
+                    if (!hasFailed && resultEntry.executeResult?.success) {
                         if (orderId) completedOrderIds.push(orderId);
                     } else if (orderId) {
                         flaggedOrders.push({ orderId, failedItems: failedIds });
