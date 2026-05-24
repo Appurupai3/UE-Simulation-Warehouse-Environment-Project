@@ -621,10 +621,11 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         }
     }
 
-    async function reconcileOrderItems({ carId, items, shippingTarget, itemAssignments, deliveredItemIds }) {
+    async function reconcileBatchItems({ fallbackCarId, expectedItemIds, itemAssignments, deliveredItemIds }) {
         const missingItems = [];
-        for (const itemId of items || []) {
+        for (const itemId of expectedItemIds || []) {
             const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+            const shippingTarget = itemAssignments?.get(itemId)?.shippingTarget;
             if (!box || !isBoxAtShippingTarget(box, shippingTarget)) {
                 missingItems.push(itemId);
             }
@@ -632,12 +633,17 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         const failedItems = [];
         for (const itemId of missingItems) {
+            const assignment = itemAssignments?.get(itemId);
+            const shippingCoord = assignment?.shippingTarget?.coord;
+            const assignedCarId = assignment?.carId || fallbackCarId;
             const cargoBox = boxes.find((box) => box.userData?.boxId === itemId && !box.userData?.isPicked);
-            if (!cargoBox) {
+
+            if (!cargoBox || !shippingCoord || !assignedCarId) {
                 failedItems.push(itemId);
                 continue;
             }
-            const moved = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
+
+            const moved = await moveCargoBoxToCoords(assignedCarId, cargoBox, [shippingCoord], { itemAssignments, deliveredItemIds });
             if (moved) {
                 deliveredItemIds?.add(itemId);
             } else {
@@ -772,21 +778,25 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
                 const results = await Promise.all(taskConfigs.map((config) => executeOrder({ ...config, itemAssignments, deliveredItemIds })));
 
+                executionStatus.value = `批次 ${Math.floor(startIndex / 2) + 1} 所有商品已拾取，立即進入檢測階段`;
+                const expectedItemIds = taskConfigs.flatMap((config) => config.items || []);
+                const reconcile = await reconcileBatchItems({
+                    fallbackCarId: taskConfigs[0]?.carId || getDefaultCarId(),
+                    expectedItemIds,
+                    itemAssignments,
+                    deliveredItemIds,
+                });
+
                 for (let i = 0; i < taskConfigs.length; i++) {
                     const config = taskConfigs[i];
                     const orderId = config.order?.id;
-                    const reconcile = await reconcileOrderItems({
-                        carId: config.carId,
-                        items: config.items || [],
-                        shippingTarget: config.shippingTarget,
-                        itemAssignments,
-                        deliveredItemIds,
-                    });
+                    const orderItems = new Set(config.items || []);
+                    const orderFailedByReconcile = reconcile.failedItems.filter((itemId) => orderItems.has(itemId));
 
-                    const hasFailed = reconcile.failedItems.length > 0 || !results[i]?.success;
+                    const hasFailed = orderFailedByReconcile.length > 0 || !results[i]?.success;
                     const failedIds = Array.from(new Set([
                         ...(results[i]?.failedItemIds || []),
-                        ...reconcile.failedItems,
+                        ...orderFailedByReconcile,
                     ]));
                     if (!hasFailed && results[i]?.success) {
                         if (orderId) completedOrderIds.push(orderId);
