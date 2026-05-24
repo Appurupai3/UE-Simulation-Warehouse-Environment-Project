@@ -786,30 +786,27 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
                 }));
 
-                const taskResults = await Promise.all(taskConfigs.map(async (config, i) => {
+                const taskPromises = taskConfigs.map(async (config, i) => {
                     const executeResult = await executeOrder({ ...config, itemAssignments, deliveredItemIds });
+                    executionFlows.value[i].status = `訂單 ${config.order?.id ?? "-"} 已取貨完成，檢測中`;
                     executionStatus.value = `訂單 ${config.order?.id ?? "-"}（${config.shippingTarget?.label ?? "-"}）已完成取貨，立即進入檢測階段`;
+
                     const reconcileResult = await reconcileOrderByAssignments({
                         fallbackCarId: config.carId || taskConfigs[0]?.carId || getDefaultCarId(),
                         items: config.items || [],
                         itemAssignments,
                         deliveredItemIds,
                     });
-                    return { executeResult, reconcileResult, index: i };
-                }));
 
-                for (const resultEntry of taskResults) {
-                    const i = resultEntry.index;
-                    const config = taskConfigs[i];
                     const orderId = config.order?.id;
-                    const orderFailedByReconcile = resultEntry.reconcileResult.failedItems;
-
-                    const hasFailed = orderFailedByReconcile.length > 0 || !resultEntry.executeResult?.success;
+                    const orderFailedByReconcile = reconcileResult.failedItems;
+                    const hasFailed = orderFailedByReconcile.length > 0 || !executeResult?.success;
                     const failedIds = Array.from(new Set([
-                        ...(resultEntry.executeResult?.failedItemIds || []),
+                        ...(executeResult?.failedItemIds || []),
                         ...orderFailedByReconcile,
                     ]));
-                    if (!hasFailed && resultEntry.executeResult?.success) {
+
+                    if (!hasFailed && executeResult?.success) {
                         if (orderId) completedOrderIds.push(orderId);
                     } else if (orderId) {
                         flaggedOrders.push({ orderId, failedItems: failedIds });
@@ -818,7 +815,9 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                     executionFlows.value[i].status = hasFailed
                         ? `訂單 ${orderId ?? "-"} 核對有漏件：${failedIds.join(", ")}（已特別標記）`
                         : `訂單 ${orderId ?? "-"} 已完成（目標 ${config.shippingTarget?.label ?? "-"}）`;
-                }
+                });
+
+                await Promise.all(taskPromises);
 
                 executionStatus.value = `批次 ${Math.floor(startIndex / 2) + 1} 核對完成，5 秒後回庫隨機上架`;
                 await pause(5000);
