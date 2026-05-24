@@ -79,14 +79,6 @@ const pushCompletedOrders = (orderTasks, completedOrderIds = []) => {
   })
 }
 
-const executeInPairs = async (tasks) => {
-  for (let cursor = 0; cursor < tasks.length; cursor += 2) {
-    const chunk = tasks.slice(cursor, cursor + 2)
-    const result = await threeSceneRef.value.startOrderExecution(chunk)
-    pushCompletedOrders(chunk, result?.completedOrderIds || [])
-  }
-}
-
 const handleStartExecution = async () => {
   if (!threeSceneRef.value || isExecuting.value || props.orders.length === 0) return
 
@@ -95,14 +87,8 @@ const handleStartExecution = async () => {
     items: parseOrderItems(order.content)
   }))
 
-  if (benchmarkBridge.value?.source === 'benchmark') {
-    await executeInPairs(orderTasks)
-    return
-  }
-
-  const firstTwo = orderTasks.slice(0, 2)
-  const result = await threeSceneRef.value.startOrderExecution(firstTwo)
-  pushCompletedOrders(firstTwo, result?.completedOrderIds || [])
+  const result = await threeSceneRef.value.startOrderExecution(orderTasks)
+  pushCompletedOrders(orderTasks, result?.completedOrderIds || [])
 }
 
 const handleResetWarehouse = () => {

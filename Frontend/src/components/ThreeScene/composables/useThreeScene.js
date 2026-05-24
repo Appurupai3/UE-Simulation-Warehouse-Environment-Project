@@ -9,7 +9,7 @@ import { createTrackSystem } from '../utils/trackSystem';
 import { createPlayer } from '../utils/player';
 import { setupInputHandlers } from '../utils/inputHandlers';
 import { setupHoverDetection } from '../utils/hoverDetection';
-import { unloadBays, unloadAreaCells } from '../../../utils/warehouseConfig.js';
+import { unloadBays, unloadAreaCells, storageDepth } from '../../../utils/warehouseConfig.js';
 
 export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPosition }) {
     let scene, camera, renderer, boxes = [], baseModel = null, trackPieces = [];
@@ -84,7 +84,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                                     id: `${i}`,
                                     label: `X${i + 1}`,
                                 }));
-                                destinationYOptions.value = Array.from({ length: metrics.depth }, (_, i) => ({
+                                destinationYOptions.value = Array.from({ length: storageDepth }, (_, i) => ({
                                     id: `${i}`,
                                     label: `Y${i + 1}`,
                                 }));
@@ -257,6 +257,14 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         });
     }
 
+    function isBoxAtShippingTarget(box, shippingTarget) {
+        const target = shippingTarget?.coord;
+        const coord = box?.userData?.gridCoord;
+        if (!target || !coord) return false;
+        if (box.userData?.isPicked) return false;
+        return coord.x === target.x && coord.z === target.z;
+    }
+
     function isUnloadAreaCoord(coord) {
         return unloadAreaCells.has(`${coord.x}-${coord.z}`);
     }
@@ -368,7 +376,8 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
     function getManhattanRingCoords(centerCoord, distance) {
         if (!gridMetricsCache || distance < 1) return [];
 
-        const { width, depth } = gridMetricsCache;
+        const { width } = gridMetricsCache;
+        const depth = storageDepth;
         const candidates = [];
         const seen = new Set();
 
@@ -531,6 +540,113 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         }
     }
 
+
+    function shuffle(array) {
+        const cloned = [...array];
+        for (let i = cloned.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cloned[i], cloned[j]] = [cloned[j], cloned[i]];
+        }
+        return cloned;
+    }
+
+    function getCarBlockedCoords() {
+        if (!carManager?.cars) return new Set();
+        const blocked = new Set();
+        carManager.cars.forEach((car) => {
+            const coords = carManager.getCarOccupiedCoords?.(car) || [];
+            coords.forEach((coord) => blocked.add(`${coord.x}-${coord.z}`));
+        });
+        return blocked;
+    }
+
+    function getRandomRestockCoords() {
+        if (!gridMetricsCache) return [];
+        const coords = [];
+        const carBlocked = getCarBlockedCoords();
+        for (let z = 0; z < storageDepth; z++) {
+            for (let x = 0; x < gridMetricsCache.width; x++) {
+                const coord = { x, z };
+                const key = `${x}-${z}`;
+                if (isUnloadAreaCoord(coord)) continue;
+                if (carBlocked.has(key)) continue;
+                if (getStackAtCoord(coord).length >= gridMetricsCache.height) continue;
+                coords.push(coord);
+            }
+        }
+        return shuffle(coords);
+    }
+
+    function placeBoxAtCoordImmediately(box, coord) {
+        if (!box || !coord || !gridMetricsCache) return false;
+        const stack = getStackAtCoord(coord);
+        if (stack.length >= gridMetricsCache.height) return false;
+
+        const yLevel = stack.length;
+        const position = carManager?.getShelfWorldPosition
+            ? carManager.getShelfWorldPosition({ x: coord.x, y: yLevel, z: coord.z })
+            : null;
+        if (!position) return false;
+
+        if (box.parent !== scene) {
+            scene.attach(box);
+        }
+        box.position.copy(position);
+        box.rotation.set(0, 0, 0);
+        box.userData.gridCoord = { x: coord.x, y: yLevel, z: coord.z };
+        box.userData.defaultGridCoord = { x: coord.x, y: yLevel, z: coord.z };
+        box.userData.defaultPosition = box.position.clone();
+        box.userData.isPicked = false;
+        box.userData.attachedToCarId = null;
+        box.userData.originalParent = scene;
+        box.updateMatrixWorld(true);
+        return true;
+    }
+
+    async function restockDeliveredItems(deliveredBoxes) {
+        const pending = deliveredBoxes.filter(Boolean);
+        if (pending.length === 0) return;
+
+        for (const box of pending) {
+            const targets = getRandomRestockCoords();
+            if (targets.length === 0) break;
+            const placed = targets.some((coord) => placeBoxAtCoordImmediately(box, coord));
+            if (!placed) {
+                executionStatus.value = `回庫上架失敗：商品 ${box.userData?.boxId ?? '-'}`;
+            }
+        }
+
+        if (currentModelSize) {
+            saveBoxData(boxes, currentModelSize);
+        }
+    }
+
+    async function reconcileOrderItems({ carId, items, shippingTarget, itemAssignments, deliveredItemIds }) {
+        const missingItems = [];
+        for (const itemId of items || []) {
+            const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+            if (!box || !isBoxAtShippingTarget(box, shippingTarget)) {
+                missingItems.push(itemId);
+            }
+        }
+
+        const failedItems = [];
+        for (const itemId of missingItems) {
+            const cargoBox = boxes.find((box) => box.userData?.boxId === itemId && !box.userData?.isPicked);
+            if (!cargoBox) {
+                failedItems.push(itemId);
+                continue;
+            }
+            const moved = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
+            if (moved) {
+                deliveredItemIds?.add(itemId);
+            } else {
+                failedItems.push(itemId);
+            }
+        }
+
+        return { missingItems, failedItems };
+    }
     async function executeOrder({ carId, order, items, shippingTarget, itemAssignments, deliveredItemIds }) {
         if (!carId) {
             return { success: false, message: "尚未分配車輛" };
@@ -545,6 +661,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
         const orderItemIds = new Set(items);
 
+        const failedItemIds = [];
         for (const itemId of items) {
             if (deliveredItemIds?.has(itemId)) {
                 continue;
@@ -555,22 +672,26 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
 
             if (!cargoBox) {
                 executionStatus.value = `找不到商品 ${itemId}`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
             if (!cargoBox.userData?.gridCoord) {
                 executionStatus.value = `商品 ${itemId} 的位置資訊缺失`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
             const clearResult = await clearBlockingCargo(carId, cargoBox, orderItemIds, itemAssignments, deliveredItemIds);
             if (!clearResult.success) {
                 executionStatus.value = `商品 ${itemId} 無法清除阻擋貨物：${clearResult.message}`;
+                failedItemIds.push(itemId);
                 continue;
             }
             const moveResult = await moveCargoBoxToCoords(carId, cargoBox, [shippingTarget.coord], { itemAssignments, deliveredItemIds });
             if (!moveResult) {
                 executionStatus.value = `商品 ${itemId} 卸貨失敗`;
+                failedItemIds.push(itemId);
                 continue;
             }
 
@@ -582,7 +703,13 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
             saveBoxData(boxes, currentModelSize);
         }
 
-        return { success: true, message: `訂單 ${order?.id ?? ""} 已完成`.trim() };
+        return {
+            success: failedItemIds.length === 0,
+            message: failedItemIds.length === 0
+                ? `訂單 ${order?.id ?? ""} 已完成`.trim()
+                : `訂單 ${order?.id ?? ""} 有未完成商品：${failedItemIds.join(", ")}`.trim(),
+            failedItemIds,
+        };
     }
 
     async function executeOrders(orderTasks = []) {
@@ -606,63 +733,83 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
         executionStatus.value = "開始執行訂單";
 
         try {
-            const deliveredItemIds = new Set();
-            const itemAssignments = new Map();
+            const completedOrderIds = [];
+            const flaggedOrders = [];
+            executionFlows.value = [];
 
-            const taskConfigs = orderTasks.slice(0, 2).map((task, index) => {
-                const shippingTarget = shippingTargets[index % shippingTargets.length];
-                const carId = carIds[index % carIds.length] || getDefaultCarId();
-                (task.items || []).forEach((itemId) => {
-                    const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
-                    const pickupCoord = box?.userData?.gridCoord
-                        ? { x: box.userData.gridCoord.x, z: box.userData.gridCoord.z }
-                        : null;
+            for (let startIndex = 0; startIndex < orderTasks.length; startIndex += 2) {
+                const batch = orderTasks.slice(startIndex, startIndex + 2);
+                const deliveredItemIds = new Set();
+                const itemAssignments = new Map();
 
-                    itemAssignments.set(itemId, {
-                        orderId: task.order?.id,
-                        carId,
-                        shippingTarget,
-                        pickupCoord,
+                const taskConfigs = batch.map((task, index) => {
+                    const shippingTarget = shippingTargets[index % shippingTargets.length];
+                    const carId = carIds[index % carIds.length] || getDefaultCarId();
+                    (task.items || []).forEach((itemId) => {
+                        const box = boxes.find((candidate) => candidate.userData?.boxId === itemId);
+                        const pickupCoord = box?.userData?.gridCoord
+                            ? { x: box.userData.gridCoord.x, z: box.userData.gridCoord.z }
+                            : null;
+
+                        itemAssignments.set(itemId, {
+                            orderId: task.order?.id,
+                            carId,
+                            shippingTarget,
+                            pickupCoord,
+                        });
                     });
+
+                    return { carId, order: task.order, items: task.items, shippingTarget };
                 });
-                executionStatus.value = `分配 ${task.order?.id ?? ""} -> ${shippingTarget.label}`.trim();
-                return {
-                    carId,
-                    order: task.order,
-                    items: task.items,
-                    shippingTarget,
-                };
-            });
 
-            executionFlows.value = taskConfigs.map((config, index) => ({
-                id: `${config.carId}-${config.order?.id ?? index}`,
-                carId: config.carId,
-                orderId: config.order?.id ?? "-",
-                shippingLabel: config.shippingTarget?.label ?? "-",
-                status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
-            }));
+                executionFlows.value = taskConfigs.map((config, index) => ({
+                    id: `${config.carId}-${config.order?.id ?? startIndex + index}`,
+                    carId: config.carId,
+                    orderId: config.order?.id ?? "-",
+                    shippingLabel: config.shippingTarget?.label ?? "-",
+                    status: `訂單 ${config.order?.id ?? "-"} 已分配，準備執行`,
+                }));
 
-            const tasks = taskConfigs.map((config) => executeOrder({
-                ...config,
-                itemAssignments,
-                deliveredItemIds,
-            }));
+                const results = await Promise.all(taskConfigs.map((config) => executeOrder({ ...config, itemAssignments, deliveredItemIds })));
 
-            const results = await Promise.all(tasks);
-            executionFlows.value = executionFlows.value.map((flow, index) => ({
-                ...flow,
-                status: results[index]?.success
-                    ? `訂單 ${flow.orderId} 已完成（目標 ${flow.shippingLabel}）`
-                    : `訂單 ${flow.orderId} 執行失敗，請檢查貨物狀態`,
-            }));
+                for (let i = 0; i < taskConfigs.length; i++) {
+                    const config = taskConfigs[i];
+                    const orderId = config.order?.id;
+                    const reconcile = await reconcileOrderItems({
+                        carId: config.carId,
+                        items: config.items || [],
+                        shippingTarget: config.shippingTarget,
+                        itemAssignments,
+                        deliveredItemIds,
+                    });
 
-            const completedOrderIds = orderTasks
-                .slice(0, results.length)
-                .filter((_, index) => results[index]?.success)
-                .map((task) => task.order?.id)
-                .filter(Boolean);
+                    const hasFailed = reconcile.failedItems.length > 0 || !results[i]?.success;
+                    const failedIds = Array.from(new Set([
+                        ...(results[i]?.failedItemIds || []),
+                        ...reconcile.failedItems,
+                    ]));
+                    if (!hasFailed && results[i]?.success) {
+                        if (orderId) completedOrderIds.push(orderId);
+                    } else if (orderId) {
+                        flaggedOrders.push({ orderId, failedItems: failedIds });
+                    }
 
-            if (completedOrderIds.length > 0) {
+                    executionFlows.value[i].status = hasFailed
+                        ? `訂單 ${orderId ?? "-"} 核對有漏件：${failedIds.join(", ")}（已特別標記）`
+                        : `訂單 ${orderId ?? "-"} 已完成（目標 ${config.shippingTarget?.label ?? "-"}）`;
+                }
+
+                executionStatus.value = `批次 ${Math.floor(startIndex / 2) + 1} 核對完成，5 秒後回庫隨機上架`;
+                await pause(5000);
+
+                const deliveredBoxes = boxes.filter((box) => deliveredItemIds.has(box.userData?.boxId));
+                await restockDeliveredItems(deliveredBoxes);
+            }
+
+            if (flaggedOrders.length > 0) {
+                const flaggedText = flaggedOrders.map((item) => `${item.orderId}[${item.failedItems.join('/') || 'unknown'}]`).join(', ');
+                executionStatus.value = `已完成 ${completedOrderIds.length} 張；異常標記：${flaggedText}`;
+            } else {
                 executionStatus.value = `訂單 ${completedOrderIds.join(", ")} 已完成`;
             }
 
@@ -670,6 +817,7 @@ export function useThreeScene({ container, moveSpeed, hoveredBoxInfo, tooltipPos
                 success: completedOrderIds.length > 0,
                 message: executionStatus.value,
                 completedOrderIds,
+                flaggedOrders,
             };
         } finally {
             isExecuting.value = false;

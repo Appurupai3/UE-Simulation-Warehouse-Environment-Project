@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { SIMULATION_STEP_MS, SIMULATION_STEP_SECONDS } from "./simulationTiming.js";
+import { storageDepth } from "./warehouseConfig.js";
 
 /**
  * 車子管理器
@@ -553,7 +554,7 @@ export class CarManager {
     getDestinationOptions() {
         if (!this.gridMetrics) return [];
         const options = [];
-        for (let z = 0; z < this.gridMetrics.depth; z++) {
+        for (let z = 0; z < storageDepth; z++) {
             for (let x = 0; x < this.gridMetrics.width; x++) {
                 const id = `${x}-${z}`;
                 options.push({
@@ -1024,7 +1025,7 @@ export class CarManager {
      */
     moveCarToSafePosition(car) {
         // 嘗試找一個空閒的格子
-        for (let z = 0; z < this.gridMetrics.depth; z++) {
+        for (let z = 0; z < storageDepth; z++) {
             for (let x = 0; x < this.gridMetrics.width; x++) {
                 const candidateCoords = this.getCarOccupiedCoords(car, { x, z });
                 const isFree = candidateCoords.every((coord) => {
@@ -1091,7 +1092,7 @@ export class CarManager {
             targetCoord.x < 0 ||
             targetCoord.x >= this.gridMetrics.width ||
             targetCoord.z < 0 ||
-            targetCoord.z >= this.gridMetrics.depth
+            targetCoord.z >= storageDepth
         ) {
             return { success: false, message: "目的地超出架位範圍" };
         }
