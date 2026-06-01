@@ -20,14 +20,14 @@
     </filter>
     <style>
       .font { font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif; }
-      .title { font-size: 210px; font-weight: 900; fill: #0f172a; letter-spacing: -6px; }
-      .subtitle { font-size: 82px; font-weight: 700; fill: #334155; }
-      .meta { font-size: 68px; font-weight: 650; fill: #1e293b; }
-      .section { font-size: 92px; font-weight: 850; fill: #0f172a; }
-      .body { font-size: 58px; font-weight: 500; fill: #334155; }
-      .small { font-size: 46px; font-weight: 500; fill: #475569; }
-      .label { font-size: 48px; font-weight: 800; fill: #0f766e; }
-      .num { font-size: 122px; font-weight: 900; fill: #2563eb; }
+      .title { font-size: 250px; font-weight: 900; fill: #0f172a; letter-spacing: -6px; }
+      .subtitle { font-size: 98px; font-weight: 700; fill: #334155; }
+      .meta { font-size: 82px; font-weight: 650; fill: #1e293b; }
+      .section { font-size: 112px; font-weight: 850; fill: #0f172a; }
+      .body { font-size: 72px; font-weight: 500; fill: #334155; }
+      .small { font-size: 56px; font-weight: 500; fill: #475569; }
+      .label { font-size: 60px; font-weight: 800; fill: #0f766e; }
+      .num { font-size: 150px; font-weight: 900; fill: #2563eb; }
       .white { fill: #ffffff; }
       .card { fill: rgba(255,255,255,0.86); stroke: #dbe7ef; stroke-width: 5; filter: url(#softShadow); }
       .chip { fill: #ecfeff; stroke: #99f6e4; stroke-width: 4; }
@@ -45,12 +45,12 @@
   <!-- Header required by the project brief -->
   <g class="font" transform="translate(420 440)">
     <text class="title" x="0" y="0">基於 Three.js 的 Web3D</text>
-    <text class="title" x="0" y="245">智慧倉儲環境模擬系統</text>
-    <rect x="0" y="335" width="6150" height="12" rx="6" fill="url(#accent)"/>
-    <text class="meta" x="0" y="485">專題編號：114-2-CSIE-S021</text>
-    <text class="meta" x="0" y="590">執行期限：114 年第 1 學期至 114 年第 2 學期</text>
-    <text class="meta" x="0" y="695">指導教授：林惠勇</text>
-    <text class="meta" x="0" y="800">專題參與人員：112590024 邱紹溏　112490004 邱昱綸</text>
+    <text class="title" x="0" y="290">智慧倉儲環境模擬系統</text>
+    <rect x="0" y="395" width="6150" height="12" rx="6" fill="url(#accent)"/>
+    <text class="meta" x="0" y="585">專題編號：114-2-CSIE-S021</text>
+    <text class="meta" x="0" y="715">執行期限：114 年第 1 學期至 114 年第 2 學期</text>
+    <text class="meta" x="0" y="845">指導教授：林惠勇</text>
+    <text class="meta" x="0" y="975">專題參與人員：112590024 邱紹溏　112490004 邱昱綸</text>
   </g>
 
   <!-- Hero panel -->
