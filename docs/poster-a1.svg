@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="7016" height="9933" viewBox="0 0 7016 9933" role="img" aria-labelledby="posterTitle posterDesc">
+  <title id="posterTitle">基於 Three.js 的 Web3D 智慧倉儲環境模擬系統 A1 直式海報</title>
+  <desc id="posterDesc">A1 直式解析度 7016 x 9933 px，淺色背景，包含指定表頭、系統架構、核心功能、演算法與成果展示。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fbff"/>
+      <stop offset="52%" stop-color="#eef7f4"/>
+      <stop offset="100%" stop-color="#fff8ec"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="100%" stop-color="#ccfbf1"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <style>
+      .font { font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif; }
+      .title { font-size: 210px; font-weight: 900; fill: #0f172a; letter-spacing: -6px; }
+      .subtitle { font-size: 82px; font-weight: 700; fill: #334155; }
+      .meta { font-size: 68px; font-weight: 650; fill: #1e293b; }
+      .section { font-size: 92px; font-weight: 850; fill: #0f172a; }
+      .body { font-size: 58px; font-weight: 500; fill: #334155; }
+      .small { font-size: 46px; font-weight: 500; fill: #475569; }
+      .label { font-size: 48px; font-weight: 800; fill: #0f766e; }
+      .num { font-size: 122px; font-weight: 900; fill: #2563eb; }
+      .white { fill: #ffffff; }
+      .card { fill: rgba(255,255,255,0.86); stroke: #dbe7ef; stroke-width: 5; filter: url(#softShadow); }
+      .chip { fill: #ecfeff; stroke: #99f6e4; stroke-width: 4; }
+      .line { stroke: #94a3b8; stroke-width: 10; stroke-linecap: round; }
+      .blueLine { stroke: #2563eb; stroke-width: 14; stroke-linecap: round; fill: none; }
+      .tealLine { stroke: #0f766e; stroke-width: 14; stroke-linecap: round; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="7016" height="9933" fill="url(#bg)"/>
+  <circle cx="6450" cy="560" r="520" fill="#bfdbfe" opacity="0.35"/>
+  <circle cx="480" cy="9370" r="620" fill="#fed7aa" opacity="0.34"/>
+  <path d="M0,775 C1210,510 2070,920 3150,660 C4350,372 5270,300 7016,620 L7016,0 L0,0 Z" fill="#e0f2fe" opacity="0.68"/>
+
+  <!-- Header required by the project brief -->
+  <g class="font" transform="translate(420 440)">
+    <text class="title" x="0" y="0">基於 Three.js 的 Web3D</text>
+    <text class="title" x="0" y="245">智慧倉儲環境模擬系統</text>
+    <rect x="0" y="335" width="6150" height="12" rx="6" fill="url(#accent)"/>
+    <text class="meta" x="0" y="485">專題編號：114-2-CSIE-S021</text>
+    <text class="meta" x="0" y="590">執行期限：114 年第 1 學期至 114 年第 2 學期</text>
+    <text class="meta" x="0" y="695">指導教授：林惠勇</text>
+    <text class="meta" x="0" y="800">專題參與人員：112590024 邱紹溏　112490004 邱昱綸</text>
+  </g>
+
+  <!-- Hero panel -->
+  <g transform="translate(420 1480)">
+    <rect class="card" x="0" y="0" width="6176" height="2100" rx="92"/>
+    <rect x="70" y="70" width="6036" height="1960" rx="72" fill="url(#hero)" opacity="0.88"/>
+    <g class="font" transform="translate(260 245)">
+      <text class="section" x="0" y="0">研究動機</text>
+      <text class="body" x="0" y="125">以瀏覽器即時 3D 視覺化取代傳統 2D 倉儲規劃，降低測試成本並強化教學展示。</text>
+      <text class="body" x="0" y="220">系統結合訂單流程、路徑規劃、車輛調度與碰撞偵測，建立可互動的智慧倉儲沙盒。</text>
+      <g transform="translate(0 395)">
+        <rect class="chip" x="0" y="0" width="1210" height="150" rx="75"/>
+        <text class="label" x="92" y="97">Three.js 3D Visualization</text>
+        <rect class="chip" x="1310" y="0" width="980" height="150" rx="75"/>
+        <text class="label" x="1402" y="97">FastAPI WebSocket</text>
+        <rect class="chip" x="2390" y="0" width="930" height="150" rx="75"/>
+        <text class="label" x="2485" y="97">Path Planning</text>
+      </g>
+    </g>
+
+    <!-- Isometric warehouse illustration -->
+    <g transform="translate(760 980)">
+      <polygon points="0,580 1780,0 4030,650 2200,1320" fill="#dbeafe" stroke="#93c5fd" stroke-width="10"/>
+      <g opacity="0.75" stroke="#60a5fa" stroke-width="6">
+        <path d="M320 485 L2520 1115"/><path d="M655 375 L2855 1005"/><path d="M990 265 L3190 895"/><path d="M1325 155 L3525 785"/>
+        <path d="M325 690 L2105 110"/><path d="M720 800 L2500 220"/><path d="M1115 910 L2895 330"/><path d="M1510 1020 L3290 440"/><path d="M1905 1130 L3685 550"/>
+      </g>
+      <g>
+        <rect x="820" y="332" width="260" height="260" rx="24" fill="#fbbf24" transform="rotate(18 950 462)"/>
+        <rect x="1340" y="492" width="260" height="260" rx="24" fill="#34d399" transform="rotate(18 1470 622)"/>
+        <rect x="1860" y="642" width="260" height="260" rx="24" fill="#60a5fa" transform="rotate(18 1990 772)"/>
+        <rect x="2380" y="790" width="260" height="260" rx="24" fill="#fb7185" transform="rotate(18 2510 920)"/>
+        <rect x="2865" y="598" width="290" height="160" rx="42" fill="#0f172a" transform="rotate(18 3010 678)"/>
+        <circle cx="2930" cy="790" r="44" fill="#475569"/><circle cx="3150" cy="858" r="44" fill="#475569"/>
+        <path d="M3040 575 C2740 390 2350 408 2050 520 C1780 620 1480 825 1120 748" class="blueLine" stroke-dasharray="38 34"/>
+        <circle cx="1115" cy="748" r="52" fill="#2563eb"/><circle cx="3040" cy="575" r="52" fill="#0f766e"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Middle content cards -->
+  <g class="font" transform="translate(420 3860)">
+    <rect class="card" x="0" y="0" width="2970" height="1880" rx="76"/>
+    <text class="section" x="190" y="210">系統架構</text>
+    <g transform="translate(190 360)">
+      <rect x="0" y="0" width="800" height="240" rx="52" fill="#eff6ff" stroke="#93c5fd" stroke-width="6"/>
+      <text class="label" x="110" y="100">Frontend</text><text class="small" x="110" y="168">Vue + Three.js</text>
+      <line class="line" x1="850" y1="120" x2="1110" y2="120"/><polygon points="1110,120 1045,82 1045,158" fill="#94a3b8"/>
+      <rect x="1160" y="0" width="800" height="240" rx="52" fill="#f0fdfa" stroke="#5eead4" stroke-width="6"/>
+      <text class="label" x="1270" y="100">WebSocket</text><text class="small" x="1270" y="168">即時資料同步</text>
+      <line class="line" x1="2010" y1="120" x2="2270" y2="120"/><polygon points="2270,120 2205,82 2205,158" fill="#94a3b8"/>
+      <rect x="2320" y="0" width="800" height="240" rx="52" fill="#fff7ed" stroke="#fdba74" stroke-width="6"/>
+      <text class="label" x="2430" y="100">Backend</text><text class="small" x="2430" y="168">FastAPI Services</text>
+    </g>
+    <g class="body" transform="translate(210 825)">
+      <text x="0" y="0">01　訂單輸入與貨物資料管理</text>
+      <text x="0" y="125">02　演算法服務計算最短路徑</text>
+      <text x="0" y="250">03　WebSocket 推送車輛狀態</text>
+      <text x="0" y="375">04　Three.js 即時呈現倉儲場景</text>
+      <text x="0" y="500">05　碰撞模式與速度控制支援互動測試</text>
+    </g>
+  </g>
+
+  <g class="font" transform="translate(3626 3860)">
+    <rect class="card" x="0" y="0" width="2970" height="1880" rx="76"/>
+    <text class="section" x="190" y="210">核心功能</text>
+    <g transform="translate(190 370)">
+      <text class="num" x="0" y="0">01</text><text class="body" x="210" y="-18">3D 倉儲格狀場景</text><text class="small" x="210" y="58">貨箱、軌道、車輛與視角控制整合。</text>
+      <text class="num" x="0" y="300">02</text><text class="body" x="210" y="282">多演算法比較</text><text class="small" x="210" y="358">A*、BFS、動態避障與死鎖檢測。</text>
+      <text class="num" x="0" y="600">03</text><text class="body" x="210" y="582">即時任務執行</text><text class="small" x="210" y="658">訂單狀態、車輛位置與執行流程可視化。</text>
+      <text class="num" x="0" y="900">04</text><text class="body" x="210" y="882">測試與效能觀察</text><text class="small" x="210" y="958">提供基準測試面板與程式碼沙盒。</text>
+    </g>
+  </g>
+
+  <!-- Workflow band -->
+  <g class="font" transform="translate(420 6000)">
+    <rect class="card" x="0" y="0" width="6176" height="1380" rx="76"/>
+    <text class="section" x="190" y="205">智慧倉儲任務流程</text>
+    <g transform="translate(260 405)">
+      <g>
+        <circle cx="170" cy="170" r="150" fill="#dbeafe" stroke="#60a5fa" stroke-width="8"/><text class="num" x="105" y="210">1</text>
+        <text class="body" x="0" y="420">建立訂單</text><text class="small" x="-75" y="500">輸入貨物編號與目標</text>
+      </g>
+      <path class="tealLine" d="M365 170 L1045 170"/><polygon points="1045,170 970,125 970,215" fill="#0f766e"/>
+      <g transform="translate(1120 0)">
+        <circle cx="170" cy="170" r="150" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="8"/><text class="num" x="105" y="210">2</text>
+        <text class="body" x="-5" y="420">規劃路徑</text><text class="small" x="-70" y="500">計算最短且安全路線</text>
+      </g>
+      <path class="tealLine" d="M1485 170 L2165 170"/><polygon points="2165,170 2090,125 2090,215" fill="#0f766e"/>
+      <g transform="translate(2240 0)">
+        <circle cx="170" cy="170" r="150" fill="#fef3c7" stroke="#fbbf24" stroke-width="8"/><text class="num" x="105" y="210">3</text>
+        <text class="body" x="-5" y="420">派車搬運</text><text class="small" x="-70" y="500">同步顯示車輛移動</text>
+      </g>
+      <path class="tealLine" d="M2605 170 L3285 170"/><polygon points="3285,170 3210,125 3210,215" fill="#0f766e"/>
+      <g transform="translate(3360 0)">
+        <circle cx="170" cy="170" r="150" fill="#fee2e2" stroke="#fb7185" stroke-width="8"/><text class="num" x="105" y="210">4</text>
+        <text class="body" x="-5" y="420">避障監控</text><text class="small" x="-95" y="500">偵測碰撞與死鎖風險</text>
+      </g>
+      <path class="tealLine" d="M3725 170 L4405 170"/><polygon points="4405,170 4330,125 4330,215" fill="#0f766e"/>
+      <g transform="translate(4480 0)">
+        <circle cx="170" cy="170" r="150" fill="#ede9fe" stroke="#a78bfa" stroke-width="8"/><text class="num" x="105" y="210">5</text>
+        <text class="body" x="-5" y="420">結果分析</text><text class="small" x="-110" y="500">比較路徑長度與執行時間</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom cards -->
+  <g class="font" transform="translate(420 7660)">
+    <rect class="card" x="0" y="0" width="1910" height="1510" rx="72"/>
+    <text class="section" x="150" y="185">技術亮點</text>
+    <text class="body" x="150" y="370">• 模組化 Vue 元件設計</text>
+    <text class="body" x="150" y="500">• Three.js 場景、軌道與車輛控制</text>
+    <text class="body" x="150" y="630">• WebSocket 即時狀態傳輸</text>
+    <text class="body" x="150" y="760">• 演算法基準測試與沙盒執行</text>
+    <text class="body" x="150" y="890">• 碰撞模式、速度與流程面板</text>
+  </g>
+
+  <g class="font" transform="translate(2553 7660)">
+    <rect class="card" x="0" y="0" width="1910" height="1510" rx="72"/>
+    <text class="section" x="150" y="185">預期成果</text>
+    <text class="body" x="150" y="370">• 完成可操作的 Web3D 模擬平台</text>
+    <text class="body" x="150" y="500">• 呈現自動化倉儲任務流程</text>
+    <text class="body" x="150" y="630">• 建立演算法比較依據</text>
+    <text class="body" x="150" y="760">• 支援未來擴充多車協作策略</text>
+    <text class="body" x="150" y="890">• 作為智慧物流教學展示工具</text>
+  </g>
+
+  <g class="font" transform="translate(4686 7660)">
+    <rect class="card" x="0" y="0" width="1910" height="1510" rx="72"/>
+    <text class="section" x="150" y="185">未來展望</text>
+    <text class="body" x="150" y="370">• 導入更多車隊派遣策略</text>
+    <text class="body" x="150" y="500">• 加入庫存最佳化與熱區分析</text>
+    <text class="body" x="150" y="630">• 擴充 IoT 感測資料串接</text>
+    <text class="body" x="150" y="760">• 建置自動化報表與數據儀表板</text>
+    <text class="body" x="150" y="890">• 支援多人協作與雲端部署</text>
+  </g>
+
+  <g class="font" transform="translate(420 9375)">
+    <rect x="0" y="0" width="6176" height="150" rx="75" fill="#0f172a" opacity="0.88"/>
+    <text class="small white" x="260" y="98">A1 直式海報｜7016 × 9933 px｜淺色系背景｜Three.js Web3D 智慧倉儲環境模擬系統</text>
+  </g>
+</svg>
