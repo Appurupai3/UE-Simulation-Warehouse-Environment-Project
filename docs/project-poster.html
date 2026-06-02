@@ -341,28 +341,33 @@
             <linearGradient id="car" x1="0" x2="1"><stop stop-color="#ffbd59"/><stop offset="1" stop-color="#ff6b9d"/></linearGradient>
             <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
-          <g transform="translate(42 38)">
-            <polygon points="80,318 420,318 486,154 166,154" fill="rgba(14,165,233,0.08)" stroke="rgba(37,99,235,0.28)" />
-            <g stroke="rgba(37,99,235,0.22)">
-              <line x1="122" y1="154" x2="42" y2="318"/><line x1="188" y1="154" x2="136" y2="318"/><line x1="254" y1="154" x2="230" y2="318"/><line x1="320" y1="154" x2="324" y2="318"/><line x1="386" y1="154" x2="418" y2="318"/>
-              <line x1="166" y1="154" x2="486" y2="154"/><line x1="144" y1="202" x2="468" y2="202"/><line x1="122" y1="250" x2="446" y2="250"/><line x1="80" y1="318" x2="420" y2="318"/>
-            </g>
-            <g opacity="0.95">
-              <rect x="188" y="132" width="42" height="42" rx="5" fill="url(#box)"/><rect x="244" y="132" width="42" height="42" rx="5" fill="url(#box)"/><rect x="300" y="132" width="42" height="42" rx="5" fill="url(#box)"/>
-              <rect x="164" y="184" width="44" height="44" rx="5" fill="#2dd4bf"/><rect x="220" y="184" width="44" height="44" rx="5" fill="url(#box)"/><rect x="276" y="184" width="44" height="44" rx="5" fill="#2dd4bf"/><rect x="332" y="184" width="44" height="44" rx="5" fill="url(#box)"/>
-              <rect x="138" y="238" width="46" height="46" rx="5" fill="url(#box)"/><rect x="196" y="238" width="46" height="46" rx="5" fill="#2dd4bf"/><rect x="254" y="238" width="46" height="46" rx="5" fill="url(#box)"/><rect x="312" y="238" width="46" height="46" rx="5" fill="#2dd4bf"/>
-            </g>
-            <path d="M92 300 C 178 238, 255 252, 336 186 S 431 166, 450 106" fill="none" stroke="#ffbd59" stroke-width="6" stroke-linecap="round" stroke-dasharray="12 12" filter="url(#glow)"/>
-            <path d="M404 286 C 338 238, 330 192, 260 168 S 172 130, 116 92" fill="none" stroke="#57e389" stroke-width="5" stroke-linecap="round" stroke-dasharray="9 11" filter="url(#glow)"/>
-            <g transform="translate(72 286)">
-              <rect width="74" height="38" rx="13" fill="url(#car)" filter="url(#glow)"/><circle cx="18" cy="38" r="7" fill="#102033"/><circle cx="56" cy="38" r="7" fill="#102033"/><text x="37" y="25" fill="#102033" text-anchor="middle" font-size="16" font-weight="900">AGV</text>
-            </g>
-            <g transform="translate(396 78)">
-              <rect width="86" height="46" rx="13" fill="rgba(87,227,137,0.92)"/><text x="43" y="29" fill="#102033" text-anchor="middle" font-size="15" font-weight="900">出貨口</text>
-            </g>
+          <g transform="translate(48 32)">
             <g fill="#102033" font-size="15" font-weight="800">
-              <text x="18" y="26">Web3D Warehouse Simulation</text>
-              <text x="310" y="356">Path Planning / Collision Avoidance</text>
+              <text x="0" y="20">Web3D Warehouse Simulation</text>
+              <text x="280" y="20">Square Grid / Route Planning</text>
+            </g>
+
+            <rect x="28" y="52" width="390" height="300" rx="18" fill="rgba(255,255,255,0.72)" stroke="rgba(37,99,235,0.24)" stroke-width="2"/>
+            <g stroke="rgba(37,99,235,0.22)" stroke-width="2">
+              <line x1="28" y1="112" x2="418" y2="112"/><line x1="28" y1="172" x2="418" y2="172"/><line x1="28" y1="232" x2="418" y2="232"/><line x1="28" y1="292" x2="418" y2="292"/>
+              <line x1="106" y1="52" x2="106" y2="352"/><line x1="184" y1="52" x2="184" y2="352"/><line x1="262" y1="52" x2="262" y2="352"/><line x1="340" y1="52" x2="340" y2="352"/>
+            </g>
+
+            <g opacity="0.96">
+              <rect x="44" y="68" width="48" height="48" rx="7" fill="url(#box)"/><rect x="122" y="68" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="200" y="68" width="48" height="48" rx="7" fill="url(#box)"/><rect x="278" y="68" width="48" height="48" rx="7" fill="#2dd4bf"/>
+              <rect x="44" y="128" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="122" y="128" width="48" height="48" rx="7" fill="url(#box)"/><rect x="278" y="128" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="128" width="48" height="48" rx="7" fill="#2dd4bf"/>
+              <rect x="44" y="188" width="48" height="48" rx="7" fill="url(#box)"/><rect x="200" y="188" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="278" y="188" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="188" width="48" height="48" rx="7" fill="url(#box)"/>
+              <rect x="122" y="248" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="200" y="248" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="248" width="48" height="48" rx="7" fill="#2dd4bf"/>
+            </g>
+
+            <path d="M67 322 H145 V262 H223 V202 H301 V142 H379" fill="none" stroke="#ffbd59" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="13 12" filter="url(#glow)"/>
+            <path d="M379 322 H301 V262 H223 V202 H145 V142 H67" fill="none" stroke="#57e389" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 11" filter="url(#glow)"/>
+
+            <g transform="translate(34 304)">
+              <rect width="74" height="38" rx="12" fill="url(#car)" filter="url(#glow)"/><circle cx="18" cy="38" r="7" fill="#102033"/><circle cx="56" cy="38" r="7" fill="#102033"/><text x="37" y="25" fill="#102033" text-anchor="middle" font-size="16" font-weight="900">AGV</text>
+            </g>
+            <g transform="translate(430 128)">
+              <rect width="86" height="46" rx="13" fill="rgba(87,227,137,0.92)"/><text x="43" y="29" fill="#102033" text-anchor="middle" font-size="15" font-weight="900">出貨口</text>
             </g>
           </g>
         </svg>
