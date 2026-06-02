@@ -6,18 +6,18 @@
   <title>114-2-CSIE-S021 專題海報｜Three.js Web3D 智慧倉儲環境模擬系統</title>
   <style>
     :root {
-      --bg: #07111f;
-      --panel: rgba(12, 27, 48, 0.86);
-      --panel-2: rgba(18, 39, 68, 0.76);
-      --line: rgba(125, 211, 252, 0.26);
-      --cyan: #38d9ff;
-      --blue: #5aa3ff;
-      --amber: #ffbd59;
-      --green: #57e389;
-      --pink: #ff6b9d;
-      --text: #f4f8ff;
-      --muted: #b9c7da;
-      --dark: #07111f;
+      --bg: #f5fbff;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-2: rgba(239, 248, 255, 0.94);
+      --line: rgba(37, 99, 235, 0.18);
+      --cyan: #0891b2;
+      --blue: #2563eb;
+      --amber: #f59e0b;
+      --green: #16a34a;
+      --pink: #db2777;
+      --text: #102033;
+      --muted: #4b6178;
+      --dark: #ffffff;
       font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
     }
 
@@ -27,9 +27,9 @@
       margin: 0;
       min-height: 100vh;
       background:
-        radial-gradient(circle at 8% 8%, rgba(56, 217, 255, 0.22), transparent 34%),
-        radial-gradient(circle at 90% 4%, rgba(255, 189, 89, 0.18), transparent 30%),
-        linear-gradient(135deg, #06111f 0%, #0c1930 48%, #08111f 100%);
+        radial-gradient(circle at 8% 8%, rgba(14, 165, 233, 0.18), transparent 34%),
+        radial-gradient(circle at 90% 4%, rgba(251, 191, 36, 0.18), transparent 30%),
+        linear-gradient(135deg, #f8fcff 0%, #eaf6ff 48%, #fffaf0 100%);
       color: var(--text);
     }
 
@@ -49,15 +49,15 @@
       border: 1px solid var(--line);
       border-radius: 32px;
       pointer-events: none;
-      box-shadow: 0 0 80px rgba(56, 217, 255, 0.12) inset;
+      box-shadow: 0 0 80px rgba(14, 165, 233, 0.10) inset;
     }
 
     .grid-glow {
       position: absolute;
       inset: 0;
       background-image:
-        linear-gradient(rgba(125, 211, 252, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(125, 211, 252, 0.08) 1px, transparent 1px);
+        linear-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37, 99, 235, 0.08) 1px, transparent 1px);
       background-size: 46px 46px;
       mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
       pointer-events: none;
@@ -75,9 +75,9 @@
 
     .hero-card, .meta-card, .card {
       border: 1px solid var(--line);
-      background: linear-gradient(180deg, var(--panel), rgba(7, 17, 31, 0.88));
+      background: linear-gradient(180deg, var(--panel), rgba(247, 252, 255, 0.94));
       border-radius: 28px;
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+      box-shadow: 0 24px 70px rgba(37, 99, 235, 0.12);
     }
 
     .hero-card { padding: 34px 38px; }
@@ -90,9 +90,9 @@
       gap: 10px;
       padding: 8px 14px;
       border-radius: 999px;
-      background: rgba(56, 217, 255, 0.12);
-      border: 1px solid rgba(56, 217, 255, 0.34);
-      color: #bff3ff;
+      background: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(14, 165, 233, 0.28);
+      color: #075985;
       font-weight: 800;
       letter-spacing: 0.08em;
       font-size: 15px;
@@ -153,7 +153,7 @@
       height: 34px;
       border-radius: 999px;
       background: linear-gradient(var(--cyan), var(--blue));
-      box-shadow: 0 0 24px rgba(56, 217, 255, 0.55);
+      box-shadow: 0 0 24px rgba(14, 165, 233, 0.28);
     }
 
     p, li { color: var(--muted); font-size: 18px; line-height: 1.7; }
@@ -169,7 +169,7 @@
       padding: 16px;
       border-radius: 18px;
       background: var(--panel-2);
-      border: 1px solid rgba(125, 211, 252, 0.18);
+      border: 1px solid rgba(37, 99, 235, 0.14);
     }
 
     .feature b { display: block; color: var(--text); font-size: 20px; margin-bottom: 6px; }
@@ -186,8 +186,8 @@
       position: relative;
       padding: 18px 14px;
       border-radius: 18px;
-      background: rgba(7, 17, 31, 0.72);
-      border: 1px solid rgba(125, 211, 252, 0.22);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(37, 99, 235, 0.16);
       min-height: 120px;
     }
 
@@ -211,8 +211,8 @@
       position: relative;
       overflow: hidden;
       background:
-        radial-gradient(circle at 50% 30%, rgba(56, 217, 255, 0.16), transparent 42%),
-        linear-gradient(180deg, rgba(10, 24, 44, 0.9), rgba(5, 12, 22, 0.94));
+        radial-gradient(circle at 50% 30%, rgba(14, 165, 233, 0.18), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(226, 242, 255, 0.9));
     }
 
     .visual svg { width: 100%; height: auto; display: block; }
@@ -249,8 +249,8 @@
       text-align: center;
       padding: 18px 10px;
       border-radius: 20px;
-      background: rgba(56, 217, 255, 0.10);
-      border: 1px solid rgba(56, 217, 255, 0.22);
+      background: rgba(14, 165, 233, 0.10);
+      border: 1px solid rgba(14, 165, 233, 0.18);
     }
 
     .metric strong { display: block; font-size: 32px; color: var(--text); }
@@ -260,9 +260,9 @@
     .tag {
       padding: 9px 13px;
       border-radius: 999px;
-      color: #dff8ff;
-      background: rgba(56, 217, 255, 0.10);
-      border: 1px solid rgba(56, 217, 255, 0.24);
+      color: #075985;
+      background: rgba(14, 165, 233, 0.10);
+      border: 1px solid rgba(14, 165, 233, 0.18);
       font-size: 16px;
       font-weight: 800;
     }
@@ -276,8 +276,8 @@
     .algo {
       padding: 16px;
       border-radius: 18px;
-      background: rgba(255, 255, 255, 0.045);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(37, 99, 235, 0.14);
     }
 
     .algo b { color: var(--text); font-size: 18px; display: block; margin-bottom: 7px; }
@@ -292,7 +292,7 @@
       padding: 22px 28px;
       border-radius: 24px;
       border: 1px solid var(--line);
-      background: rgba(7, 17, 31, 0.72);
+      background: rgba(255, 255, 255, 0.82);
       color: var(--muted);
       font-weight: 800;
     }
@@ -342,8 +342,8 @@
             <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
           <g transform="translate(42 38)">
-            <polygon points="80,318 420,318 486,154 166,154" fill="rgba(56,217,255,0.08)" stroke="rgba(125,211,252,0.34)" />
-            <g stroke="rgba(125,211,252,0.25)">
+            <polygon points="80,318 420,318 486,154 166,154" fill="rgba(14,165,233,0.08)" stroke="rgba(37,99,235,0.28)" />
+            <g stroke="rgba(37,99,235,0.22)">
               <line x1="122" y1="154" x2="42" y2="318"/><line x1="188" y1="154" x2="136" y2="318"/><line x1="254" y1="154" x2="230" y2="318"/><line x1="320" y1="154" x2="324" y2="318"/><line x1="386" y1="154" x2="418" y2="318"/>
               <line x1="166" y1="154" x2="486" y2="154"/><line x1="144" y1="202" x2="468" y2="202"/><line x1="122" y1="250" x2="446" y2="250"/><line x1="80" y1="318" x2="420" y2="318"/>
             </g>
@@ -355,12 +355,12 @@
             <path d="M92 300 C 178 238, 255 252, 336 186 S 431 166, 450 106" fill="none" stroke="#ffbd59" stroke-width="6" stroke-linecap="round" stroke-dasharray="12 12" filter="url(#glow)"/>
             <path d="M404 286 C 338 238, 330 192, 260 168 S 172 130, 116 92" fill="none" stroke="#57e389" stroke-width="5" stroke-linecap="round" stroke-dasharray="9 11" filter="url(#glow)"/>
             <g transform="translate(72 286)">
-              <rect width="74" height="38" rx="13" fill="url(#car)" filter="url(#glow)"/><circle cx="18" cy="38" r="7" fill="#07111f"/><circle cx="56" cy="38" r="7" fill="#07111f"/><text x="37" y="25" fill="#07111f" text-anchor="middle" font-size="16" font-weight="900">AGV</text>
+              <rect width="74" height="38" rx="13" fill="url(#car)" filter="url(#glow)"/><circle cx="18" cy="38" r="7" fill="#102033"/><circle cx="56" cy="38" r="7" fill="#102033"/><text x="37" y="25" fill="#102033" text-anchor="middle" font-size="16" font-weight="900">AGV</text>
             </g>
             <g transform="translate(396 78)">
-              <rect width="86" height="46" rx="13" fill="rgba(87,227,137,0.92)"/><text x="43" y="29" fill="#07111f" text-anchor="middle" font-size="15" font-weight="900">出貨口</text>
+              <rect width="86" height="46" rx="13" fill="rgba(87,227,137,0.92)"/><text x="43" y="29" fill="#102033" text-anchor="middle" font-size="15" font-weight="900">出貨口</text>
             </g>
-            <g fill="#f4f8ff" font-size="15" font-weight="800">
+            <g fill="#102033" font-size="15" font-weight="800">
               <text x="18" y="26">Web3D Warehouse Simulation</text>
               <text x="310" y="356">Path Planning / Collision Avoidance</text>
             </g>
