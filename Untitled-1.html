@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>114-2-CSIE-S021 專題海報｜Three.js Web3D 智慧倉儲環境模擬系統</title>
+  <style>
+    :root {
+      --bg: #f5fbff;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-2: rgba(239, 248, 255, 0.94);
+      --line: rgba(37, 99, 235, 0.18);
+      --cyan: #0891b2;
+      --blue: #2563eb;
+      --amber: #f59e0b;
+      --green: #16a34a;
+      --pink: #db2777;
+      --text: #102033;
+      --muted: #4b6178;
+      --dark: #ffffff;
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 8% 8%, rgba(14, 165, 233, 0.18), transparent 34%),
+        radial-gradient(circle at 90% 4%, rgba(251, 191, 36, 0.18), transparent 30%),
+        linear-gradient(135deg, #f8fcff 0%, #eaf6ff 48%, #fffaf0 100%);
+      color: var(--text);
+    }
+
+    .poster {
+      width: min(1189px, 100%);
+      min-height: 1682px;
+      margin: 0 auto;
+      padding: 44px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .poster::before {
+      content: "";
+      position: absolute;
+      inset: 22px;
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      pointer-events: none;
+      box-shadow: 0 0 80px rgba(14, 165, 233, 0.10) inset;
+    }
+
+    .grid-glow {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37, 99, 235, 0.08) 1px, transparent 1px);
+      background-size: 46px 46px;
+      mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+      pointer-events: none;
+    }
+
+    header, main, footer { position: relative; z-index: 1; }
+
+    header {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 28px;
+      align-items: stretch;
+      margin-bottom: 28px;
+    }
+
+    .hero-card, .meta-card, .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel), rgba(247, 252, 255, 0.94));
+      border-radius: 28px;
+      box-shadow: 0 24px 70px rgba(37, 99, 235, 0.12);
+    }
+
+    .hero-card { padding: 34px 38px; }
+    .meta-card { padding: 28px; display: flex; flex-direction: column; justify-content: space-between; }
+
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(14, 165, 233, 0.28);
+      color: #075985;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      font-size: 15px;
+    }
+
+    h1 {
+      margin: 22px 0 14px;
+      font-size: 58px;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 23px;
+      line-height: 1.55;
+      max-width: 760px;
+    }
+
+    .highlight { color: var(--cyan); }
+
+    .meta-title {
+      color: var(--amber);
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      margin-bottom: 14px;
+    }
+
+    .meta-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+    .meta-list li { display: grid; gap: 4px; }
+    .label { color: var(--muted); font-size: 14px; font-weight: 700; letter-spacing: 0.06em; }
+    .value { font-size: 21px; font-weight: 900; }
+
+    main {
+      display: grid;
+      grid-template-columns: 0.96fr 1.04fr;
+      gap: 24px;
+    }
+
+    .card { padding: 26px; }
+    .wide { grid-column: 1 / -1; }
+    .stack { display: grid; gap: 24px; }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h2::before {
+      content: "";
+      width: 12px;
+      height: 34px;
+      border-radius: 999px;
+      background: linear-gradient(var(--cyan), var(--blue));
+      box-shadow: 0 0 24px rgba(14, 165, 233, 0.28);
+    }
+
+    p, li { color: var(--muted); font-size: 18px; line-height: 1.7; }
+    ul { padding-left: 1.2em; margin: 0; }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .feature {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-2);
+      border: 1px solid rgba(37, 99, 235, 0.14);
+    }
+
+    .feature b { display: block; color: var(--text); font-size: 20px; margin-bottom: 6px; }
+    .feature span { color: var(--muted); font-size: 16px; line-height: 1.55; }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .step {
+      position: relative;
+      padding: 18px 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      min-height: 120px;
+    }
+
+    .step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -15px;
+      top: 42%;
+      color: var(--amber);
+      font-weight: 900;
+      font-size: 26px;
+      z-index: 2;
+    }
+
+    .step-num { color: var(--cyan); font-weight: 900; font-size: 14px; }
+    .step b { display: block; color: var(--text); font-size: 18px; margin: 8px 0 5px; }
+    .step span { color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+    .visual {
+      min-height: 508px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 30%, rgba(14, 165, 233, 0.18), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(226, 242, 255, 0.9));
+    }
+
+    .visual svg { width: 100%; height: auto; display: block; }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .cyan { background: var(--cyan); }
+    .amber { background: var(--amber); }
+    .green { background: var(--green); }
+    .pink { background: var(--pink); }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .metric {
+      text-align: center;
+      padding: 18px 10px;
+      border-radius: 20px;
+      background: rgba(14, 165, 233, 0.10);
+      border: 1px solid rgba(14, 165, 233, 0.18);
+    }
+
+    .metric strong { display: block; font-size: 32px; color: var(--text); }
+    .metric span { color: var(--muted); font-size: 14px; font-weight: 800; }
+
+    .tech-tags { display: flex; flex-wrap: wrap; gap: 10px; }
+    .tag {
+      padding: 9px 13px;
+      border-radius: 999px;
+      color: #075985;
+      background: rgba(14, 165, 233, 0.10);
+      border: 1px solid rgba(14, 165, 233, 0.18);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .algo {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(37, 99, 235, 0.14);
+    }
+
+    .algo b { color: var(--text); font-size: 18px; display: block; margin-bottom: 7px; }
+    .algo span { color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      margin-top: 24px;
+      padding: 22px 28px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .footer-title { color: var(--text); font-size: 20px; }
+
+    @media print {
+      body { background: var(--bg); }
+      .poster { width: 297mm; min-height: 420mm; padding: 12mm; }
+      @page { size: A3 portrait; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <section class="poster" aria-label="專題海報">
+    <div class="grid-glow"></div>
+
+    <header>
+      <div class="hero-card">
+        <div class="eyebrow">114-2-CSIE-S021｜專題研究</div>
+        <h1>基於 <span class="highlight">Three.js</span> 的 Web3D 智慧倉儲環境模擬系統</h1>
+        <p class="subtitle">以瀏覽器 3D 視覺化呈現自動化倉儲作業，整合訂單管理、WebSocket 即時通訊、搬運車路徑規劃與演算法 Benchmark，協助觀察倉儲取貨流程與避障效率。</p>
+      </div>
+
+      <aside class="meta-card">
+        <div>
+          <div class="meta-title">PROJECT INFO</div>
+          <ul class="meta-list">
+            <li><span class="label">執行期限</span><span class="value">114 年第 1 學期至第 2 學期</span></li>
+            <li><span class="label">指導教授</span><span class="value">林惠勇 教授</span></li>
+            <li><span class="label">專題參與人員</span><span class="value">112590024 邱紹溏<br />112490004 邱昱綸</span></li>
+          </ul>
+        </div>
+        <div class="tech-tags" aria-label="技術標籤">
+          <span class="tag">Vue.js</span><span class="tag">Three.js</span><span class="tag">FastAPI</span><span class="tag">WebSocket</span>
+        </div>
+      </aside>
+    </header>
+
+    <main>
+      <section class="card visual">
+        <h2>系統情境示意</h2>
+        <svg viewBox="0 0 540 420" role="img" aria-label="智慧倉儲 Web3D 模擬示意圖">
+          <defs>
+            <linearGradient id="box" x1="0" x2="1"><stop stop-color="#5aa3ff"/><stop offset="1" stop-color="#38d9ff"/></linearGradient>
+            <linearGradient id="car" x1="0" x2="1"><stop stop-color="#ffbd59"/><stop offset="1" stop-color="#ff6b9d"/></linearGradient>
+            <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <g transform="translate(48 32)">
+            <g fill="#102033" font-size="15" font-weight="800">
+              <text x="0" y="20">Web3D Warehouse Simulation</text>
+              <text x="280" y="20">Square Grid / Route Planning</text>
+            </g>
+
+            <rect x="28" y="52" width="390" height="300" rx="18" fill="rgba(255,255,255,0.72)" stroke="rgba(37,99,235,0.24)" stroke-width="2"/>
+            <g stroke="rgba(37,99,235,0.22)" stroke-width="2">
+              <line x1="28" y1="112" x2="418" y2="112"/><line x1="28" y1="172" x2="418" y2="172"/><line x1="28" y1="232" x2="418" y2="232"/><line x1="28" y1="292" x2="418" y2="292"/>
+              <line x1="106" y1="52" x2="106" y2="352"/><line x1="184" y1="52" x2="184" y2="352"/><line x1="262" y1="52" x2="262" y2="352"/><line x1="340" y1="52" x2="340" y2="352"/>
+            </g>
+
+            <g opacity="0.96">
+              <rect x="44" y="68" width="48" height="48" rx="7" fill="url(#box)"/><rect x="122" y="68" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="200" y="68" width="48" height="48" rx="7" fill="url(#box)"/><rect x="278" y="68" width="48" height="48" rx="7" fill="#2dd4bf"/>
+              <rect x="44" y="128" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="122" y="128" width="48" height="48" rx="7" fill="url(#box)"/><rect x="278" y="128" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="128" width="48" height="48" rx="7" fill="#2dd4bf"/>
+              <rect x="44" y="188" width="48" height="48" rx="7" fill="url(#box)"/><rect x="200" y="188" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="278" y="188" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="188" width="48" height="48" rx="7" fill="url(#box)"/>
+              <rect x="122" y="248" width="48" height="48" rx="7" fill="#2dd4bf"/><rect x="200" y="248" width="48" height="48" rx="7" fill="url(#box)"/><rect x="356" y="248" width="48" height="48" rx="7" fill="#2dd4bf"/>
+            </g>
+
+            <path d="M67 322 H145 V262 H223 V202 H301 V142 H379" fill="none" stroke="#ffbd59" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="13 12" filter="url(#glow)"/>
+            <path d="M379 322 H301 V262 H223 V202 H145 V142 H67" fill="none" stroke="#57e389" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 11" filter="url(#glow)"/>
+
+            <g transform="translate(34 304)">
+              <rect width="74" height="38" rx="12" fill="url(#car)" filter="url(#glow)"/><circle cx="18" cy="38" r="7" fill="#102033"/><circle cx="56" cy="38" r="7" fill="#102033"/><text x="37" y="25" fill="#102033" text-anchor="middle" font-size="16" font-weight="900">AGV</text>
+            </g>
+            <g transform="translate(430 128)">
+              <rect width="86" height="46" rx="13" fill="rgba(87,227,137,0.92)"/><text x="43" y="29" fill="#102033" text-anchor="middle" font-size="15" font-weight="900">出貨口</text>
+            </g>
+          </g>
+        </svg>
+        <div class="legend">
+          <div class="legend-item"><span class="dot cyan"></span>貨箱堆疊網格</div>
+          <div class="legend-item"><span class="dot amber"></span>搬運車取貨路徑</div>
+          <div class="legend-item"><span class="dot green"></span>出貨口與避障路線</div>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="card">
+          <h2>研究動機與目標</h2>
+          <p>傳統倉儲流程不易即時觀察搬運車與貨物狀態。本系統以 Web3D 建置可互動的智慧倉儲模擬平台，讓使用者能在瀏覽器中輸入訂單、查看 3D 場景、執行取貨流程，並比較不同路徑規劃策略的效率與穩定性。</p>
+        </section>
+
+        <section class="card">
+          <h2>核心功能</h2>
+          <div class="feature-grid">
+            <div class="feature"><b>3D 倉儲視覺化</b><span>以 Three.js 呈現倉儲網格、貨箱堆疊、搬運車與出貨口。</span></div>
+            <div class="feature"><b>即時訂單同步</b><span>透過 WebSocket 將前端訂單與後端資料即時同步。</span></div>
+            <div class="feature"><b>路徑規劃模擬</b><span>支援 A*、BFS、貪婪與避障優先等策略比較。</span></div>
+            <div class="feature"><b>Benchmark 分析</b><span>用圖像化測試觀察步數、搬運流程與批次最佳化效果。</span></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card wide">
+        <h2>系統流程</h2>
+        <div class="pipeline">
+          <div class="step"><span class="step-num">01</span><b>建立訂單</b><span>使用者輸入貨物編號，產生待處理訂單。</span></div>
+          <div class="step"><span class="step-num">02</span><b>即時傳輸</b><span>FastAPI WebSocket 保存並廣播訂單狀態。</span></div>
+          <div class="step"><span class="step-num">03</span><b>3D 場景載入</b><span>Three.js 載入倉儲格位、貨箱與搬運車模型。</span></div>
+          <div class="step"><span class="step-num">04</span><b>演算法規劃</b><span>依貨物位置與障礙物計算取貨與回程路徑。</span></div>
+          <div class="step"><span class="step-num">05</span><b>模擬與評估</b><span>播放搬運流程，紀錄完成訂單與 Benchmark 指標。</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>技術架構</h2>
+        <ul>
+          <li><strong>Frontend：</strong>Vue.js 元件化介面，Three.js 負責 3D 渲染、場景控制與互動提示。</li>
+          <li><strong>Backend：</strong>FastAPI 提供 REST API 與 WebSocket 連線，管理訂單、Benchmark 與貨物資料。</li>
+          <li><strong>Algorithm：</strong>以 A*、BFS、Greedy、Obstacle-aware 等方法規劃路徑，並結合動態避障與死鎖檢測概念。</li>
+          <li><strong>Data Flow：</strong>訂單從前端送出後由後端同步至 3D 模擬頁，完成後回寫訂單狀態。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>預期成果與效益</h2>
+        <div class="metric-grid">
+          <div class="metric"><strong>Web3D</strong><span>互動式展示</span></div>
+          <div class="metric"><strong>即時</strong><span>訂單同步</span></div>
+          <div class="metric"><strong>多演算法</strong><span>效率比較</span></div>
+          <div class="metric"><strong>可擴充</strong><span>模組化架構</span></div>
+        </div>
+        <p>成果可作為智慧倉儲教學展示、演算法比較平台與後續物流自動化研究基礎，並能協助團隊將抽象演算法轉化為直觀的 3D 操作流程。</p>
+      </section>
+
+      <section class="card wide">
+        <h2>演算法比較重點</h2>
+        <div class="compare">
+          <div class="algo"><b>原始順序</b><span>依訂單輸入順序執行，作為基準線。</span></div>
+          <div class="algo"><b>貪婪演算法</b><span>優先選擇較近或成本較低的下一個目標。</span></div>
+          <div class="algo"><b>A* 演算法</b><span>以啟發式搜尋降低無效移動，提升路徑效率。</span></div>
+          <div class="algo"><b>避障優先</b><span>考慮搬運車與障礙物，降低碰撞與等待風險。</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div><span class="footer-title">Three.js Web3D 智慧倉儲環境模擬系統</span><br />專題編號：114-2-CSIE-S021</div>
+      <div>指導教授：林惠勇 教授｜邱紹溏、邱昱綸</div>
+    </footer>
+  </section>
+</body>
+</html>
