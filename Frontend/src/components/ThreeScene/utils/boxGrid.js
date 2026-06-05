@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { warehouseGrid, storageDepth } from "../../../utils/warehouseConfig";
+import { getTreasureWordForBox } from "../../../words/pirateTreasureWords";
 
 export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComplete }) {
     const { width, depth, height } = warehouseGrid;
@@ -57,9 +58,14 @@ export function createBoxGrid({ scene, baseModel, boxes, unloadAreaCells, onComp
                 
                 const boxId = boxes.length + 1;
                 const defaultPosition = clonedModel.position.clone();
+                const treasureWord = getTreasureWordForBox(boxId);
                 clonedModel.userData = {
                     boxId,
-                    productName: `商品 ${boxId}`,
+                    productName: treasureWord.productName,
+                    wordCategory: treasureWord.wordCategory,
+                    wordCount: treasureWord.wordCount,
+                    storyHint: treasureWord.storyHint,
+                    treasurePack: treasureWord.treasurePack,
                     gridCoord: { x, y, z },
                     defaultGridCoord: { x, y, z },
                     defaultPosition,

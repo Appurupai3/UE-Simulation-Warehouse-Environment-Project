@@ -39,6 +39,10 @@ export function setupHoverDetection({ renderer, camera, container, boxes, hovere
                 hoveredBoxInfo.value = {
                     boxId: box.userData.boxId,
                     productName: box.userData.productName,
+                    treasurePack: box.userData.treasurePack,
+                    wordCategory: box.userData.wordCategory,
+                    wordCount: box.userData.wordCount,
+                    storyHint: box.userData.storyHint,
                 };
                 tooltipPosition.value = {
                     x: event.clientX - containerRect.left,

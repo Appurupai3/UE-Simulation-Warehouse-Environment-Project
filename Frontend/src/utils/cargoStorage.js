@@ -21,6 +21,10 @@ export function convertBoxesToCargoData(boxes, modelSize) {
     return {
       id: `case ${boxId}`,
       productName,
+      treasurePack: box.userData?.treasurePack,
+      wordCategory: box.userData?.wordCategory,
+      wordCount: box.userData?.wordCount,
+      storyHint: box.userData?.storyHint,
       position: {
         x: parseFloat(box.position.x.toFixed(4)),
         y: parseFloat(box.position.y.toFixed(4)),
